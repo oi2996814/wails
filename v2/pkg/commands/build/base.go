@@ -10,18 +10,17 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pterm/pterm"
+
 	"github.com/wailsapp/wails/v2/internal/system"
 
 	"github.com/leaanthony/gosod"
-	wailsRuntime "github.com/wailsapp/wails/v2/internal/frontend/runtime"
 	"github.com/wailsapp/wails/v2/internal/frontend/runtime/wrapper"
 
 	"github.com/pkg/errors"
 
 	"github.com/leaanthony/slicer"
-	"github.com/wailsapp/wails/v2/internal/assetdb"
 	"github.com/wailsapp/wails/v2/internal/fs"
-	"github.com/wailsapp/wails/v2/internal/html"
 	"github.com/wailsapp/wails/v2/internal/project"
 	"github.com/wailsapp/wails/v2/internal/shell"
 	"github.com/wailsapp/wails/v2/pkg/clilogger"
@@ -66,49 +65,6 @@ func (b *BaseBuilder) fileExists(path string) bool {
 	return true
 }
 
-// buildCustomAssets will iterate through the projects static directory and add all files
-// to the application wide asset database.
-func (b *BaseBuilder) buildCustomAssets(projectData *project.Project) error {
-
-	// Add trailing slash to Asset directory
-	customAssetsDir := filepath.Join(projectData.Path, "assets", "custom") + "/"
-	if !b.fileExists(customAssetsDir) {
-		err := fs.MkDirs(customAssetsDir)
-		if err != nil {
-			return err
-		}
-	}
-
-	assets := assetdb.NewAssetDB()
-	err := filepath.Walk(customAssetsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		normalisedPath := filepath.ToSlash(path)
-		localPath := strings.TrimPrefix(normalisedPath, customAssetsDir)
-		if len(localPath) == 0 {
-			return nil
-		}
-		if data, err := os.ReadFile(filepath.Join(customAssetsDir, localPath)); err == nil {
-			assets.AddAsset(localPath, data)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	// Write assetdb out to root directory
-	assetsDbFilename := fs.RelativePath("../../../assetsdb.go")
-	b.addFileToDelete(assetsDbFilename)
-	err = os.WriteFile(assetsDbFilename, []byte(assets.Serialize("assets", "wails")), 0644)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (b *BaseBuilder) convertFileToIntegerString(filename string) (string, error) {
 	rawData, err := os.ReadFile(filename)
 	if err != nil {
@@ -118,7 +74,6 @@ func (b *BaseBuilder) convertFileToIntegerString(filename string) (string, error
 }
 
 func (b *BaseBuilder) convertByteSliceToIntegerString(data []byte) string {
-
 	// Create string builder
 	var result strings.Builder
 
@@ -129,8 +84,7 @@ func (b *BaseBuilder) convertByteSliceToIntegerString(data []byte) string {
 			result.WriteString(fmt.Sprintf("%v,", data[i]))
 		}
 
-		result.WriteString(fmt.Sprintf("%v", data[len(data)-1]))
-
+		result.WriteString(strconv.FormatUint(uint64(data[len(data)-1]), 10))
 	}
 
 	return result.String()
@@ -138,10 +92,8 @@ func (b *BaseBuilder) convertByteSliceToIntegerString(data []byte) string {
 
 // CleanUp does post-build housekeeping
 func (b *BaseBuilder) CleanUp() {
-
 	// Delete all the files
 	b.filesToDelete.Each(func(filename string) {
-
 		// if file doesn't exist, ignore
 		if !b.fileExists(filename) {
 			return
@@ -150,8 +102,21 @@ func (b *BaseBuilder) CleanUp() {
 		// Delete file. We ignore errors because these files will be overwritten
 		// by the next build anyway.
 		_ = os.Remove(filename)
-
 	})
+}
+
+func commandPrettifier(args []string) string {
+	// If we have a single argument, just return it
+	if len(args) == 1 {
+		return args[0]
+	}
+	// If an argument contains a space, quote it
+	for i, arg := range args {
+		if strings.Contains(arg, " ") {
+			args[i] = fmt.Sprintf("\"%s\"", arg)
+		}
+	}
+	return strings.Join(args, " ")
 }
 
 func (b *BaseBuilder) OutputFilename(options *Options) string {
@@ -189,7 +154,6 @@ func (b *BaseBuilder) OutputFilename(options *Options) string {
 
 // CompileProject compiles the project
 func (b *BaseBuilder) CompileProject(options *Options) error {
-
 	// Check if the runtime wrapper exists
 	err := generateRuntimeWrapper(options)
 	if err != nil {
@@ -211,17 +175,42 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 		}
 	}
 
+	commands := slicer.String()
+
+	compiler := options.Compiler
+	if options.Obfuscated {
+		if !shell.CommandExists("garble") {
+			return fmt.Errorf("the 'garble' command was not found. Please install it with `go install mvdan.cc/garble@latest`")
+		} else {
+			compiler = "garble"
+			if options.GarbleArgs != "" {
+				commands.AddSlice(strings.Split(options.GarbleArgs, " "))
+			}
+			options.UserTags = append(options.UserTags, "obfuscated")
+		}
+	}
+
 	// Default go build command
-	commands := slicer.String([]string{"build"})
+	commands.Add("build")
+
+	commands.Add("-buildvcs=false")
 
 	// Add better debugging flags
-	if options.Mode == Dev {
+	if options.Mode == Dev || options.Mode == Debug {
 		commands.Add("-gcflags")
-		commands.Add(`"all=-N -l"`)
+		commands.Add("all=-N -l")
 	}
 
 	if options.ForceBuild {
 		commands.Add("-a")
+	}
+
+	if options.TrimPath {
+		commands.Add("-trimpath")
+	}
+
+	if options.RaceDetector {
+		commands.Add("-race")
 	}
 
 	var tags slicer.StringSlicer
@@ -233,8 +222,21 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 		tags.Add(options.WebView2Strategy)
 	}
 
-	if options.Mode == Production {
+	if options.Mode == Production || options.Mode == Debug {
 		tags.Add("production")
+	}
+	// This mode allows you to debug a production build (not dev build)
+	if options.Mode == Debug {
+		tags.Add("debug")
+	}
+
+	// This options allows you to enable devtools in production build (not dev build as it's always enabled there)
+	if options.Devtools {
+		tags.Add("devtools")
+	}
+
+	if options.Obfuscated {
+		tags.Add("obfuscated")
 	}
 
 	tags.Deduplicate()
@@ -251,7 +253,7 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 
 	if options.Mode == Production {
 		ldflags.Add("-w", "-s")
-		if options.Platform == "windows" {
+		if options.Platform == "windows" && !options.WindowsConsole {
 			ldflags.Add("-H windowsgui")
 		}
 	}
@@ -264,9 +266,9 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 	}
 
 	// Get application build directory
-	appDir := options.BuildDirectory
-	if options.CleanBuildDirectory {
-		err = cleanBuildDirectory(options)
+	appDir := options.BinDirectory
+	if options.CleanBinDirectory {
+		err = cleanBinDirectory(options)
 		if err != nil {
 			return err
 		}
@@ -278,20 +280,20 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 	commands.Add("-o")
 	commands.Add(compiledBinary)
 
-	b.projectData.OutputFilename = strings.TrimPrefix(compiledBinary, options.ProjectData.Path)
 	options.CompiledBinary = compiledBinary
 
-	// Create the command
-	cmd := exec.Command(options.Compiler, commands.AsSlice()...)
+	// Build the application
+	cmd := exec.Command(compiler, commands.AsSlice()...)
 	cmd.Stderr = os.Stderr
 	if verbose {
-		println("  Build command:", commands.Join(" "))
+		pterm.Info.Println("Build command:", compiler, commandPrettifier(commands.AsSlice()))
 		cmd.Stdout = os.Stdout
 	}
 	// Set the directory
 	cmd.Dir = b.projectData.Path
 
 	// Add CGO flags
+	// TODO: Remove this as we don't generate headers any more
 	// We use the project/build dir as a temporary place for our generated c headers
 	buildBaseDir, err := fs.RelativeToCwd("build")
 	if err != nil {
@@ -301,18 +303,20 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 	cmd.Env = os.Environ() // inherit env
 
 	if options.Platform != "windows" {
-		// Use upsertEnv so we don't overwrite user's CGO_CFLAGS
-		cmd.Env = upsertEnv(cmd.Env, "CGO_CFLAGS", func(v string) string {
+		// Use shell.UpsertEnv so we don't overwrite user's CGO_CFLAGS
+		cmd.Env = shell.UpsertEnv(cmd.Env, "CGO_CFLAGS", func(v string) string {
 			if options.Platform == "darwin" {
 				if v != "" {
 					v += " "
 				}
-				v += "-mmacosx-version-min=10.13"
+				if !strings.Contains(v, "-mmacosx-version-min") {
+					v += "-mmacosx-version-min=10.13"
+				}
 			}
 			return v
 		})
-		// Use upsertEnv so we don't overwrite user's CGO_CXXFLAGS
-		cmd.Env = upsertEnv(cmd.Env, "CGO_CXXFLAGS", func(v string) string {
+		// Use shell.UpsertEnv so we don't overwrite user's CGO_CXXFLAGS
+		cmd.Env = shell.UpsertEnv(cmd.Env, "CGO_CXXFLAGS", func(v string) string {
 			if v != "" {
 				v += " "
 			}
@@ -320,7 +324,7 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 			return v
 		})
 
-		cmd.Env = upsertEnv(cmd.Env, "CGO_ENABLED", func(v string) string {
+		cmd.Env = shell.UpsertEnv(cmd.Env, "CGO_ENABLED", func(v string) string {
 			return "1"
 		})
 		if options.Platform == "darwin" {
@@ -337,30 +341,32 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 			}
 			addUTIFramework := majorVersion >= 11
 			// Set the minimum Mac SDK to 10.13
-			cmd.Env = upsertEnv(cmd.Env, "CGO_LDFLAGS", func(v string) string {
+			cmd.Env = shell.UpsertEnv(cmd.Env, "CGO_LDFLAGS", func(v string) string {
 				if v != "" {
 					v += " "
 				}
 				if addUTIFramework {
 					v += "-framework UniformTypeIdentifiers "
 				}
-				v += "-mmacosx-version-min=10.13"
+				if !strings.Contains(v, "-mmacosx-version-min") {
+					v += "-mmacosx-version-min=10.13"
+				}
 
 				return v
 			})
 		}
 	}
 
-	cmd.Env = upsertEnv(cmd.Env, "GOOS", func(v string) string {
+	cmd.Env = shell.UpsertEnv(cmd.Env, "GOOS", func(v string) string {
 		return options.Platform
 	})
 
-	cmd.Env = upsertEnv(cmd.Env, "GOARCH", func(v string) string {
+	cmd.Env = shell.UpsertEnv(cmd.Env, "GOARCH", func(v string) string {
 		return options.Arch
 	})
 
 	if verbose {
-		println("  Environment:", strings.Join(cmd.Env, " "))
+		printBulletPoint("Environment:", strings.Join(cmd.Env, " "))
 	}
 
 	// Run command
@@ -369,6 +375,18 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 
 	// Format error if we have one
 	if err != nil {
+		if options.Platform == "darwin" {
+			output, _ := cmd.CombinedOutput()
+			stdErr := string(output)
+			if strings.Contains(err.Error(), "ld: framework not found UniformTypeIdentifiers") ||
+				strings.Contains(stdErr, "ld: framework not found UniformTypeIdentifiers") {
+				pterm.Warning.Println(`
+NOTE: It would appear that you do not have the latest Xcode cli tools installed.
+Please reinstall by doing the following:
+  1. Remove the current installation located at "xcode-select -p", EG: sudo rm -rf /Library/Developer/CommandLineTools
+  2. Install latest Xcode tools: xcode-select --install`)
+			}
+		}
 		return err
 	}
 
@@ -376,15 +394,15 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 		return nil
 	}
 
-	fmt.Printf("Compressing application: ")
+	printBulletPoint("Compressing application: ")
 
 	// Do we have upx installed?
 	if !shell.CommandExists("upx") {
-		println("Warning: Cannot compress binary: upx not found")
+		pterm.Warning.Println("Warning: Cannot compress binary: upx not found")
 		return nil
 	}
 
-	var args = []string{"--best", "--no-color", "--no-progress", options.CompiledBinary}
+	args := []string{"--best", "--no-color", "--no-progress", options.CompiledBinary}
 
 	if options.CompressFlags != "" {
 		args = strings.Split(options.CompressFlags, " ")
@@ -392,22 +410,29 @@ func (b *BaseBuilder) CompileProject(options *Options) error {
 	}
 
 	if verbose {
-		println("upx", strings.Join(args, " "))
+		pterm.Info.Println("upx", strings.Join(args, " "))
 	}
 
 	output, err := exec.Command("upx", args...).Output()
 	if err != nil {
 		return errors.Wrap(err, "Error during compression:")
 	}
-	println("Done.")
+	pterm.Println("Done.")
 	if verbose {
-		println(string(output))
+		pterm.Info.Println(string(output))
 	}
 
 	return nil
 }
 
 func generateRuntimeWrapper(options *Options) error {
+	if options.WailsJSDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		options.WailsJSDir = filepath.Join(cwd, "frontend")
+	}
 	wrapperDir := filepath.Join(options.WailsJSDir, "wailsjs", "runtime")
 	_ = os.RemoveAll(wrapperDir)
 	extractor := gosod.New(wrapper.RuntimeWrapper)
@@ -416,16 +441,6 @@ func generateRuntimeWrapper(options *Options) error {
 		return err
 	}
 
-	//ipcdev.js
-	err = os.WriteFile(filepath.Join(wrapperDir, "ipcdev.js"), wailsRuntime.DesktopIPC, 0755)
-	if err != nil {
-		return err
-	}
-	//runtimedev.js
-	err = os.WriteFile(filepath.Join(wrapperDir, "runtimedev.js"), wailsRuntime.RuntimeDesktopJS, 0755)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -436,7 +451,6 @@ func (b *BaseBuilder) NpmInstall(sourceDir string, verbose bool) error {
 
 // NpmInstallUsingCommand runs the given install command in the specified npm project directory
 func (b *BaseBuilder) NpmInstallUsingCommand(sourceDir string, installCommand string, verbose bool) error {
-
 	packageJSON := filepath.Join(sourceDir, "package.json")
 
 	// Check package.json exists
@@ -476,7 +490,10 @@ func (b *BaseBuilder) NpmInstallUsingCommand(sourceDir string, installCommand st
 	}
 
 	// Shortcut installation
-	if install == false {
+	if !install {
+		if verbose {
+			pterm.Println("Skipping npm install")
+		}
 		return nil
 	}
 
@@ -485,10 +502,10 @@ func (b *BaseBuilder) NpmInstallUsingCommand(sourceDir string, installCommand st
 	stdout, stderr, err := shell.RunCommand(sourceDir, cmd[0], cmd[1:]...)
 	if verbose || err != nil {
 		for _, l := range strings.Split(stdout, "\n") {
-			fmt.Printf("    %s\n", l)
+			pterm.Printf("    %s\n", l)
 		}
 		for _, l := range strings.Split(stderr, "\n") {
-			fmt.Printf("    %s\n", l)
+			pterm.Printf("    %s\n", l)
 		}
 	}
 
@@ -500,10 +517,10 @@ func (b *BaseBuilder) NpmRun(projectDir, buildTarget string, verbose bool) error
 	stdout, stderr, err := shell.RunCommand(projectDir, "npm", "run", buildTarget)
 	if verbose || err != nil {
 		for _, l := range strings.Split(stdout, "\n") {
-			fmt.Printf("    %s\n", l)
+			pterm.Printf("    %s\n", l)
 		}
 		for _, l := range strings.Split(stderr, "\n") {
-			fmt.Printf("    %s\n", l)
+			pterm.Printf("    %s\n", l)
 		}
 	}
 	return err
@@ -519,10 +536,10 @@ func (b *BaseBuilder) NpmRunWithEnvironment(projectDir, buildTarget string, verb
 	err := cmd.Run()
 	if verbose || err != nil {
 		for _, l := range strings.Split(stdo.String(), "\n") {
-			fmt.Printf("    %s\n", l)
+			pterm.Printf("    %s\n", l)
 		}
 		for _, l := range strings.Split(stde.String(), "\n") {
-			fmt.Printf("    %s\n", l)
+			pterm.Printf("    %s\n", l)
 		}
 	}
 	return err
@@ -530,91 +547,66 @@ func (b *BaseBuilder) NpmRunWithEnvironment(projectDir, buildTarget string, verb
 
 // BuildFrontend executes the `npm build` command for the frontend directory
 func (b *BaseBuilder) BuildFrontend(outputLogger *clilogger.CLILogger) error {
-
 	verbose := b.options.Verbosity == VERBOSE
 
-	frontendDir := filepath.Join(b.projectData.Path, "frontend")
+	frontendDir := b.projectData.GetFrontendDir()
+	if !fs.DirExists(frontendDir) {
+		return fmt.Errorf("frontend directory '%s' does not exist", frontendDir)
+	}
 
 	// Check there is an 'InstallCommand' provided in wails.json
-	if b.projectData.InstallCommand == "" {
+	installCommand := b.projectData.InstallCommand
+	if b.projectData.OutputType == "dev" {
+		installCommand = b.projectData.GetDevInstallerCommand()
+	}
+	if installCommand == "" {
 		// No - don't install
-		outputLogger.Println("No Install command. Skipping.")
+		printBulletPoint("No Install command. Skipping.")
+		pterm.Println("")
 	} else {
 		// Do install if needed
-		outputLogger.Print("Installing frontend dependencies: ")
+		printBulletPoint("Installing frontend dependencies: ")
 		if verbose {
-			outputLogger.Println("")
-			outputLogger.Println("  Install command: '" + b.projectData.InstallCommand + "'")
+			pterm.Println("")
+			pterm.Info.Println("Install command: '" + installCommand + "'")
 		}
-		if err := b.NpmInstallUsingCommand(frontendDir, b.projectData.InstallCommand, verbose); err != nil {
+		if err := b.NpmInstallUsingCommand(frontendDir, installCommand, verbose); err != nil {
 			return err
 		}
 		outputLogger.Println("Done.")
 	}
 
 	// Check if there is a build command
-	var buildCommand string
-	switch b.projectData.OutputType {
-	case "dev":
-		buildCommand = b.projectData.DevCommand
-		if buildCommand == "" {
-			buildCommand = b.projectData.BuildCommand
-		}
-	default:
-		buildCommand = b.projectData.BuildCommand
+	buildCommand := b.projectData.BuildCommand
+	if b.projectData.OutputType == "dev" {
+		buildCommand = b.projectData.GetDevBuildCommand()
 	}
 	if buildCommand == "" {
-		outputLogger.Println("No Build command. Skipping.")
+		printBulletPoint("No Build command. Skipping.")
+		pterm.Println("")
 		// No - ignore
 		return nil
 	}
 
-	outputLogger.Print("Compiling frontend: ")
+	printBulletPoint("Compiling frontend: ")
 	cmd := strings.Split(buildCommand, " ")
 	if verbose {
-		outputLogger.Println("")
-		outputLogger.Println("  Build command: '" + buildCommand + "'")
+		pterm.Println("")
+		pterm.Info.Println("Build command: '" + buildCommand + "'")
 	}
 	stdout, stderr, err := shell.RunCommand(frontendDir, cmd[0], cmd[1:]...)
 	if verbose || err != nil {
 		for _, l := range strings.Split(stdout, "\n") {
-			fmt.Printf("    %s\n", l)
+			pterm.Printf("    %s\n", l)
 		}
 		for _, l := range strings.Split(stderr, "\n") {
-			fmt.Printf("    %s\n", l)
+			pterm.Printf("    %s\n", l)
 		}
 	}
 	if err != nil {
 		return err
 	}
 
-	outputLogger.Println("Done.")
+	pterm.Println("Done.")
 	return nil
-}
-
-// ExtractAssets gets the assets from the index.html file
-func (b *BaseBuilder) ExtractAssets() (*html.AssetBundle, error) {
-
-	// Read in html
-	//return html.NewAssetBundle(b.projectData.HTML)
-	return nil, nil
-}
-
-func upsertEnv(env []string, key string, update func(v string) string) []string {
-	newEnv := make([]string, len(env), len(env)+1)
-	found := false
-	for i := range env {
-		if strings.HasPrefix(env[i], key+"=") {
-			eqIndex := strings.Index(env[i], "=")
-			val := env[i][eqIndex+1:]
-			newEnv[i] = fmt.Sprintf("%s=%v", key, update(val))
-			found = true
-			continue
-		}
-		newEnv[i] = env[i]
-	}
-	if !found {
-		newEnv = append(newEnv, fmt.Sprintf("%s=%v", key, update("")))
-	}
-	return newEnv
 }

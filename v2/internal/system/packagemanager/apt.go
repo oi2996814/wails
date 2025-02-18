@@ -4,6 +4,9 @@
 package packagemanager
 
 import (
+	"bytes"
+	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 
@@ -46,6 +49,9 @@ func (a *Apt) Packages() packagemap {
 		"docker": []*Package{
 			{Name: "docker.io", SystemPackage: true, Optional: true},
 		},
+		"nsis": []*Package{
+			{Name: "nsis", SystemPackage: true, Optional: true},
+		},
 	}
 }
 
@@ -59,8 +65,13 @@ func (a *Apt) PackageInstalled(pkg *Package) (bool, error) {
 	if pkg.SystemPackage == false {
 		return false, nil
 	}
-	stdout, _, err := shell.RunCommand(".", "apt", "-qq", "list", pkg.Name)
-	return strings.Contains(stdout, "[installed]"), err
+	cmd := exec.Command("apt", "list", "-qq", pkg.Name)
+	var stdo, stde bytes.Buffer
+	cmd.Stdout = &stdo
+	cmd.Stderr = &stde
+	cmd.Env = append(os.Environ(), "LANGUAGE=en")
+	err := cmd.Run()
+	return strings.Contains(stdo.String(), "[installed]"), err
 }
 
 // PackageAvailable tests if the given package is available for installation
@@ -68,7 +79,7 @@ func (a *Apt) PackageAvailable(pkg *Package) (bool, error) {
 	if pkg.SystemPackage == false {
 		return false, nil
 	}
-	stdout, _, err := shell.RunCommand(".", "apt", "-qq", "list", pkg.Name)
+	stdout, _, err := shell.RunCommand(".", "apt", "list", "-qq", pkg.Name)
 	// We add a space to ensure we get a full match, not partial match
 	output := a.removeEscapeSequences(stdout)
 	installed := strings.HasPrefix(output, pkg.Name)

@@ -1,3 +1,4 @@
+//go:build darwin
 //
 //  Application.m
 //
@@ -9,25 +10,27 @@
 #import "WailsContext.h"
 #import "Application.h"
 #import "AppDelegate.h"
+#import "WindowDelegate.h"
 #import "WailsMenu.h"
 #import "WailsMenuItem.h"
 
-WailsContext* Create(const char* title, int width, int height, int frameless, int resizable, int fullscreen, int fullSizeContent, int hideTitleBar, int titlebarAppearsTransparent, int hideTitle, int useToolbar, int hideToolbarSeparator, int webviewIsTransparent, int alwaysOnTop, int hideWindowOnClose, const char *appearance, int windowIsTranslucent, int debug, int windowStartState, int startsHidden, int minWidth, int minHeight, int maxWidth, int maxHeight) {
-    
+WailsContext* Create(const char* title, int width, int height, int frameless, int resizable, int zoomable, int fullscreen, int fullSizeContent, int hideTitleBar, int titlebarAppearsTransparent, int hideTitle, int useToolbar, int hideToolbarSeparator, int webviewIsTransparent, int alwaysOnTop, int hideWindowOnClose, const char *appearance, int windowIsTranslucent, int devtoolsEnabled, int defaultContextMenuEnabled, int windowStartState, int startsHidden, int minWidth, int minHeight, int maxWidth, int maxHeight, bool fraudulentWebsiteWarningEnabled, struct Preferences preferences, int singleInstanceLockEnabled, const char* singleInstanceUniqueId, bool enableDragAndDrop, bool disableWebViewDragAndDrop) {
+
     [NSApplication sharedApplication];
 
     WailsContext *result = [WailsContext new];
 
-    result.debug = debug;
-    
+    result.devtoolsEnabled = devtoolsEnabled;
+    result.defaultContextMenuEnabled = defaultContextMenuEnabled;
+
     if ( windowStartState == WindowStartsFullscreen ) {
         fullscreen = 1;
     }
 
-    [result CreateWindow:width :height :frameless :resizable :fullscreen :fullSizeContent :hideTitleBar :titlebarAppearsTransparent :hideTitle :useToolbar :hideToolbarSeparator :webviewIsTransparent :hideWindowOnClose :safeInit(appearance) :windowIsTranslucent :minWidth :minHeight :maxWidth :maxHeight];
+    [result CreateWindow:width :height :frameless :resizable :zoomable :fullscreen :fullSizeContent :hideTitleBar :titlebarAppearsTransparent :hideTitle :useToolbar :hideToolbarSeparator :webviewIsTransparent :hideWindowOnClose :safeInit(appearance) :windowIsTranslucent :minWidth :minHeight :maxWidth :maxHeight :fraudulentWebsiteWarningEnabled :preferences :enableDragAndDrop :disableWebViewDragAndDrop];
     [result SetTitle:safeInit(title)];
     [result Center];
-    
+
     switch( windowStartState ) {
         case WindowStartsMaximised:
             [result.mainWindow zoom:nil];
@@ -40,26 +43,20 @@ WailsContext* Create(const char* title, int width, int height, int frameless, in
     if ( startsHidden == 1 ) {
         result.startHidden = true;
     }
-    
+
     if ( fullscreen == 1 ) {
         result.startFullscreen = true;
     }
-    
+
+    if ( singleInstanceLockEnabled == 1 ) {
+        result.singleInstanceLockEnabled = true;
+        result.singleInstanceUniqueId = safeInit(singleInstanceUniqueId);
+    }
+
     result.alwaysOnTop = alwaysOnTop;
     result.hideOnClose = hideWindowOnClose;
-        
+
     return result;
-}
-
-void ProcessURLResponse(void *inctx, const char *url, int statusCode, const char *contentType, void* data, int datalength) {
-    WailsContext *ctx = (__bridge WailsContext*) inctx;
-    NSString *nsurl = safeInit(url);
-    NSString *nsContentType = safeInit(contentType);
-    NSData *nsdata = [NSData dataWithBytes:data length:datalength];
-    
-    [ctx processURLResponse:nsurl :statusCode :nsContentType :nsdata];
-
-    [nsdata release];
 }
 
 void ExecJS(void* inctx, const char *script) {
@@ -67,6 +64,7 @@ void ExecJS(void* inctx, const char *script) {
     NSString *nsscript = safeInit(script);
     ON_MAIN_THREAD(
        [ctx ExecJS:nsscript];
+       [nsscript release];
     );
 }
 
@@ -79,10 +77,10 @@ void SetTitle(void* inctx, const char *title) {
 }
 
 
-void SetRGBA(void *inctx, int r, int g, int b, int a) {
+void SetBackgroundColour(void *inctx, int r, int g, int b, int a) {
     WailsContext *ctx = (__bridge WailsContext*) inctx;
     ON_MAIN_THREAD(
-       [ctx SetRGBA:r :g :b :a];
+       [ctx SetBackgroundColour:r :g :b :a];
     );
 }
 
@@ -90,6 +88,13 @@ void SetSize(void* inctx, int width, int height) {
     WailsContext *ctx = (__bridge WailsContext*) inctx;
     ON_MAIN_THREAD(
        [ctx SetSize:width :height];
+    );
+}
+
+void SetAlwaysOnTop(void* inctx, int onTop) {
+    WailsContext *ctx = (__bridge WailsContext*) inctx;
+    ON_MAIN_THREAD(
+       [ctx SetAlwaysOnTop:onTop];
     );
 }
 
@@ -156,6 +161,13 @@ void Maximise(void* inctx) {
     );
 }
 
+void ToggleMaximise(void* inctx) {
+    WailsContext *ctx = (__bridge WailsContext*) inctx;
+    ON_MAIN_THREAD(
+       [ctx ToggleMaximise];
+    );
+}
+
 const char* GetSize(void *inctx) {
     WailsContext *ctx = (__bridge WailsContext*) inctx;
     NSRect frame = [ctx.mainWindow frame];
@@ -163,7 +175,7 @@ const char* GetSize(void *inctx) {
     return [result UTF8String];
 }
 
-const char* GetPos(void *inctx) {
+const char* GetPosition(void *inctx) {
     WailsContext *ctx = (__bridge WailsContext*) inctx;
     NSScreen* screen = [ctx getCurrentScreen];
     NSRect windowFrame = [ctx.mainWindow frame];
@@ -173,7 +185,21 @@ const char* GetPos(void *inctx) {
     y = screenFrame.size.height - y - windowFrame.size.height;
     NSString *result = [NSString stringWithFormat:@"%d,%d",x,y];
     return [result UTF8String];
-    
+}
+
+const bool IsFullScreen(void *inctx) {
+    WailsContext *ctx = (__bridge WailsContext*) inctx;
+    return [ctx IsFullScreen];
+}
+
+const bool IsMinimised(void *inctx) {
+    WailsContext *ctx = (__bridge WailsContext*) inctx;
+    return [ctx IsMinimised];
+}
+
+const bool IsMaximised(void *inctx) {
+    WailsContext *ctx = (__bridge WailsContext*) inctx;
+    return [ctx IsMaximised];
 }
 
 void UnMaximise(void* inctx) {
@@ -186,6 +212,7 @@ void UnMaximise(void* inctx) {
 void Quit(void *inctx) {
     WailsContext *ctx = (__bridge WailsContext*) inctx;
     [NSApp stop:ctx];
+    [NSApp abortModal];
 }
 
 void Hide(void *inctx) {
@@ -202,6 +229,21 @@ void Show(void *inctx) {
     );
 }
 
+
+void HideApplication(void *inctx) {
+    WailsContext *ctx = (__bridge WailsContext*) inctx;
+    ON_MAIN_THREAD(
+       [ctx HideApplication];
+    );
+}
+
+void ShowApplication(void *inctx) {
+    WailsContext *ctx = (__bridge WailsContext*) inctx;
+    ON_MAIN_THREAD(
+       [ctx ShowApplication];
+    );
+}
+
 NSString* safeInit(const char* input) {
     NSString *result = nil;
     if (input != nil) {
@@ -212,7 +254,7 @@ NSString* safeInit(const char* input) {
 
 void MessageDialog(void *inctx, const char* dialogType, const char* title, const char* message, const char* button1, const char* button2, const char* button3, const char* button4, const char* defaultButton, const char* cancelButton, void* iconData, int iconDataLength) {
     WailsContext *ctx = (__bridge WailsContext*) inctx;
-    
+
     NSString *_dialogType = safeInit(dialogType);
     NSString *_title = safeInit(title);
     NSString *_message = safeInit(message);
@@ -222,33 +264,33 @@ void MessageDialog(void *inctx, const char* dialogType, const char* title, const
     NSString *_button4 = safeInit(button4);
     NSString *_defaultButton = safeInit(defaultButton);
     NSString *_cancelButton = safeInit(cancelButton);
-    
+
     ON_MAIN_THREAD(
                    [ctx MessageDialog:_dialogType :_title :_message :_button1 :_button2 :_button3 :_button4 :_defaultButton :_cancelButton :iconData :iconDataLength];
     )
 }
 
 void OpenFileDialog(void *inctx, const char* title, const char* defaultFilename, const char* defaultDirectory, int allowDirectories, int allowFiles, int canCreateDirectories, int treatPackagesAsDirectories, int resolveAliases, int showHiddenFiles, int allowMultipleSelection, const char* filters) {
-    
+
     WailsContext *ctx = (__bridge WailsContext*) inctx;
     NSString *_title = safeInit(title);
     NSString *_defaultFilename = safeInit(defaultFilename);
     NSString *_defaultDirectory = safeInit(defaultDirectory);
     NSString *_filters = safeInit(filters);
-    
+
     ON_MAIN_THREAD(
                    [ctx OpenFileDialog:_title :_defaultFilename :_defaultDirectory :allowDirectories :allowFiles :canCreateDirectories :treatPackagesAsDirectories :resolveAliases :showHiddenFiles :allowMultipleSelection :_filters];
     )
 }
 
 void SaveFileDialog(void *inctx, const char* title, const char* defaultFilename, const char* defaultDirectory, int canCreateDirectories, int treatPackagesAsDirectories, int showHiddenFiles, const char* filters) {
-    
+
     WailsContext *ctx = (__bridge WailsContext*) inctx;
     NSString *_title = safeInit(title);
     NSString *_defaultFilename = safeInit(defaultFilename);
     NSString *_defaultDirectory = safeInit(defaultDirectory);
     NSString *_filters = safeInit(filters);
-    
+
     ON_MAIN_THREAD(
                    [ctx SaveFileDialog:_title :_defaultFilename :_defaultDirectory :canCreateDirectories :treatPackagesAsDirectories :showHiddenFiles :_filters];
     )
@@ -321,7 +363,7 @@ void AppendSeparator(void* inMenu) {
 
 
 
-void Run(void *inctx) {
+void Run(void *inctx, const char* url) {
     WailsContext *ctx = (__bridge WailsContext*) inctx;
     NSApplication *app = [NSApplication sharedApplication];
     AppDelegate* delegate = [AppDelegate new];
@@ -330,10 +372,57 @@ void Run(void *inctx) {
     delegate.mainWindow = ctx.mainWindow;
     delegate.alwaysOnTop = ctx.alwaysOnTop;
     delegate.startHidden = ctx.startHidden;
+    delegate.singleInstanceLockEnabled = ctx.singleInstanceLockEnabled;
+    delegate.singleInstanceUniqueId = ctx.singleInstanceUniqueId;
     delegate.startFullscreen = ctx.startFullscreen;
 
-    [ctx loadRequest:@"wails://wails/"];
+    NSString *_url = safeInit(url);
+    [ctx loadRequest:_url];
+    [_url release];
+
     [app setMainMenu:ctx.applicationMenu];
+}
+
+void RunMainLoop(void) {
+    NSApplication *app = [NSApplication sharedApplication];
     [app run];
+}
+
+void ReleaseContext(void *inctx) {
+    WailsContext *ctx = (__bridge WailsContext*) inctx;
     [ctx release];
+}
+
+// Credit: https://stackoverflow.com/q/33319295
+void WindowPrint(void *inctx) {
+
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= 110000
+	if (@available(macOS 11.0, *)) {
+        ON_MAIN_THREAD(
+            WailsContext *ctx = (__bridge WailsContext*) inctx;
+            WKWebView* webView = ctx.webview;
+
+            // I think this should be exposed as a config
+            // It directly affects the printed output/PDF
+            NSPrintInfo *pInfo = [NSPrintInfo sharedPrintInfo];
+            pInfo.horizontalPagination = NSPrintingPaginationModeAutomatic;
+            pInfo.verticalPagination = NSPrintingPaginationModeAutomatic;
+            pInfo.verticallyCentered = YES;
+            pInfo.horizontallyCentered = YES;
+            pInfo.orientation = NSPaperOrientationLandscape;
+            pInfo.leftMargin = 0;
+            pInfo.rightMargin = 0;
+            pInfo.topMargin = 0;
+            pInfo.bottomMargin = 0;
+
+            NSPrintOperation *po = [webView printOperationWithPrintInfo:pInfo];
+            po.showsPrintPanel = YES;
+            po.showsProgressPanel = YES;
+
+            po.view.frame = webView.bounds;
+
+            [po runOperationModalForWindow:ctx.mainWindow delegate:ctx.mainWindow.delegate didRunSelector:nil contextInfo:nil];
+        )
+	}
+#endif
 }

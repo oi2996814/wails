@@ -10,7 +10,7 @@ import (
 // FileFilter defines a filter for dialog boxes
 type FileFilter struct {
 	DisplayName string // Filter information EG: "Image Files (*.jpg, *.png)"
-	Pattern     string // semi-colon separated list of extensions, EG: "*.jpg;*.png"
+	Pattern     string // semicolon separated list of extensions, EG: "*.jpg;*.png"
 }
 
 // OpenDialogOptions contains the options for the OpenDialogOptions runtime method
@@ -45,6 +45,26 @@ const (
 	QuestionDialog DialogType = "question"
 )
 
+type Screen struct {
+	IsCurrent bool `json:"isCurrent"`
+	IsPrimary bool `json:"isPrimary"`
+
+	// Deprecated: Please use Size and PhysicalSize
+	Width int `json:"width"`
+	// Deprecated: Please use Size and PhysicalSize
+	Height int `json:"height"`
+
+	// Size is the size of the screen in logical pixel space, used when setting sizes in Wails
+	Size ScreenSize `json:"size"`
+	// PhysicalSize is the physical size of the screen in pixels
+	PhysicalSize ScreenSize `json:"physicalSize"`
+}
+
+type ScreenSize struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
 // MessageDialogOptions contains the options for the Message dialogs, EG Info, Warning, etc runtime methods
 type MessageDialogOptions struct {
 	Type          DialogType
@@ -57,7 +77,11 @@ type MessageDialogOptions struct {
 }
 
 type Frontend interface {
-	Run(context.Context) error
+	Run(ctx context.Context) error
+	RunMainLoop()
+	ExecJS(js string)
+	Hide()
+	Show()
 	Quit()
 
 	// Dialog
@@ -72,32 +96,47 @@ type Frontend interface {
 	WindowShow()
 	WindowHide()
 	WindowCenter()
+	WindowToggleMaximise()
 	WindowMaximise()
 	WindowUnmaximise()
 	WindowMinimise()
 	WindowUnminimise()
-	WindowSetPos(x int, y int)
-	WindowGetPos() (int, int)
+	WindowSetAlwaysOnTop(b bool)
+	WindowSetPosition(x int, y int)
+	WindowGetPosition() (int, int)
 	WindowSetSize(width int, height int)
 	WindowGetSize() (int, int)
 	WindowSetMinSize(width int, height int)
 	WindowSetMaxSize(width int, height int)
 	WindowFullscreen()
-	WindowUnFullscreen()
-	WindowSetRGBA(col *options.RGBA)
+	WindowUnfullscreen()
+	WindowSetBackgroundColour(col *options.RGBA)
 	WindowReload()
+	WindowReloadApp()
+	WindowSetSystemDefaultTheme()
+	WindowSetLightTheme()
+	WindowSetDarkTheme()
+	WindowIsMaximised() bool
+	WindowIsMinimised() bool
+	WindowIsNormal() bool
+	WindowIsFullscreen() bool
+	WindowClose()
+	WindowPrint()
+
+	// Screen
+	ScreenGetAll() ([]Screen, error)
 
 	// Menus
 	MenuSetApplicationMenu(menu *menu.Menu)
 	MenuUpdateApplicationMenu()
-	//SetTrayMenu(menu *menu.TrayMenu)
-	//UpdateTrayMenuLabel(menu *menu.TrayMenu)
-	//UpdateContextMenu(contextMenu *menu.ContextMenu)
-	//DeleteTrayMenuByID(id string)
 
 	// Events
 	Notify(name string, data ...interface{})
 
 	// Browser
 	BrowserOpenURL(url string)
+
+	// Clipboard
+	ClipboardGetText() (string, error)
+	ClipboardSetText(text string) error
 }

@@ -2,6 +2,7 @@ package fs
 
 import (
 	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -13,13 +14,6 @@ import (
 
 	"github.com/leaanthony/slicer"
 )
-
-// LocalDirectory gets the caller's file directory
-// Equivalent to node's __DIRNAME
-func LocalDirectory() string {
-	_, thisFile, _, _ := runtime.Caller(1)
-	return filepath.Dir(thisFile)
-}
 
 // RelativeToCwd returns an absolute path based on the cwd
 // and the given relative path
@@ -34,14 +28,14 @@ func RelativeToCwd(relativePath string) (string, error) {
 
 // Mkdir will create the given directory
 func Mkdir(dirname string) error {
-	return os.Mkdir(dirname, 0755)
+	return os.Mkdir(dirname, 0o755)
 }
 
 // MkDirs creates the given nested directories.
 // Returns error on failure
 func MkDirs(fullPath string, mode ...os.FileMode) error {
 	var perms os.FileMode
-	perms = 0755
+	perms = 0o755
 	if len(mode) == 1 {
 		perms = mode[0]
 	}
@@ -118,7 +112,7 @@ func RelativePath(relativepath string, optionalpaths ...string) string {
 		// I'm allowing this for 1 reason only: It's fatal if the path
 		// supplied is wrong as it's only used internally in Wails. If we get
 		// that path wrong, we should know about it immediately. The other reason is
-		// that it cuts down a ton of unnecassary error handling.
+		// that it cuts down a ton of unnecessary error handling.
 		panic(err)
 	}
 	return result
@@ -148,7 +142,7 @@ func MD5File(filename string) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // MustMD5File will call MD5File and abort the program on error
@@ -164,7 +158,7 @@ func MustMD5File(filename string) string {
 // MustWriteString will attempt to write the given data to the given filename
 // It will abort the program in the event of a failure
 func MustWriteString(filename string, data string) {
-	err := os.WriteFile(filename, []byte(data), 0755)
+	err := os.WriteFile(filename, []byte(data), 0o755)
 	if err != nil {
 		fatal("Unable to write file", filename, ":", err.Error())
 		os.Exit(1)
@@ -201,7 +195,6 @@ func GetSubdirectories(rootDir string) (*slicer.StringSlicer, error) {
 }
 
 func DirIsEmpty(dir string) (bool, error) {
-
 	// CREDIT: https://stackoverflow.com/a/30708914/8325411
 	f, err := os.Open(dir)
 	if err != nil {
@@ -275,13 +268,22 @@ func CopyDir(src string, dst string) (err error) {
 	return
 }
 
+// SetPermissions recursively sets file permissions on a directory
+func SetPermissions(dir string, perm os.FileMode) error {
+	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Chmod(path, perm)
+	})
+}
+
 // CopyDirExtended recursively copies a directory tree, attempting to preserve permissions.
 // Source directory must exist, destination directory must *not* exist. It ignores any files or
 // directories that are given through the ignore parameter.
 // Symlinks are ignored and skipped.
 // Credit: https://gist.github.com/r0l1/92462b38df26839a3ca324697c8cba04
 func CopyDirExtended(src string, dst string, ignore []string) (err error) {
-
 	ignoreList := slicer.String(ignore)
 	src = filepath.Clean(src)
 	dst = filepath.Clean(dst)
@@ -340,63 +342,6 @@ func CopyDirExtended(src string, dst string, ignore []string) (err error) {
 	return
 }
 
-// MoveDirExtended recursively moves a directory tree, attempting to preserve permissions.
-// Source directory must exist, destination directory must *not* exist. It ignores any files or
-// directories that are given through the ignore parameter.
-// Symlinks are ignored and skipped.
-func MoveDirExtended(src string, dst string, ignore []string) (err error) {
-
-	ignoreList := slicer.String(ignore)
-	src = filepath.Clean(src)
-	dst = filepath.Clean(dst)
-
-	si, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	if !si.IsDir() {
-		return fmt.Errorf("source is not a directory")
-	}
-
-	_, err = os.Stat(dst)
-	if err != nil && !os.IsNotExist(err) {
-		return
-	}
-	if err == nil {
-		return fmt.Errorf("destination already exists")
-	}
-
-	err = MkDirs(dst)
-	if err != nil {
-		return
-	}
-
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		return
-	}
-
-	for _, entry := range entries {
-		if ignoreList.Contains(entry.Name()) {
-			continue
-		}
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-
-		// Skip symlinks.
-		if entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-
-		err := os.Rename(srcPath, dstPath)
-		if err != nil {
-			return err
-		}
-	}
-
-	return
-}
-
 func FindPathToFile(fsys fs.FS, file string) (string, error) {
 	stat, _ := fs.Stat(fsys, file)
 	if stat != nil {
@@ -417,9 +362,41 @@ func FindPathToFile(fsys fs.FS, file string) (string, error) {
 	}
 
 	if indexFiles.Length() > 1 {
-		return "", fmt.Errorf("multiple '%s' files found in assets", file)
+		selected := indexFiles.AsSlice()[0]
+		for _, f := range indexFiles.AsSlice() {
+			if len(f) < len(selected) {
+				selected = f
+			}
+		}
+		path, _ := filepath.Split(selected)
+		return path, nil
+	}
+	if indexFiles.Length() > 0 {
+		path, _ := filepath.Split(indexFiles.AsSlice()[0])
+		return path, nil
+	}
+	return "", fmt.Errorf("%s: %w", file, os.ErrNotExist)
+}
+
+// FindFileInParents searches for a file in the current directory and all parent directories.
+// Returns the absolute path to the file if found, otherwise an empty string
+func FindFileInParents(path string, filename string) string {
+	// Check for bad paths
+	if _, err := os.Stat(path); err != nil {
+		return ""
 	}
 
-	path, _ := filepath.Split(indexFiles.AsSlice()[0])
-	return path, nil
+	var pathToFile string
+	for {
+		pathToFile = filepath.Join(path, filename)
+		if _, err := os.Stat(pathToFile); err == nil {
+			break
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return ""
+		}
+		path = parent
+	}
+	return pathToFile
 }

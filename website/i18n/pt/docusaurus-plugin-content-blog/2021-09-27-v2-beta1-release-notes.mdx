@@ -1,0 +1,161 @@
+---
+slug: wails-v2-beta-for-windows
+title: Wails v2 Beta para Windows
+authors:
+  - leaanthony
+tags:
+  - wails
+  - v2
+---
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/wails.webp").default}
+    width="40%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Quando eu anunciei o pela primeira vez o Wails no Reddit, justamente a 2 anos atrás dentro de um trem em Sidney, Eu não esperava que isso teria muita atenção. Alguns dias mais tarde, um vlogger tecnológico prolífico lançou um vídeo de tutorial, deu uma revisão positiva desde então o interesse pelo projeto disparou.
+
+Estava claro que as pessoas estavam animadas para adicionar frontend ‘web’ nas suas aplicações em Go, e quase imediatamente o projeto foi para além da prova de conceito que criei. No momento, Wails usava o projeto [webview](https://github.com/webview/webview) para lidar com o frontend, e a única opção para Windows era o renderizador IE11. Muitos relatórios de erros tiveram root nessa limitação: suporte pobre de JavaScript/CSS e nenhuma ferramenta de desenvolvimento para depurá-lo. Esta foi uma experiência de desenvolvimento frustrante, mas não havia muito que pudesse ter sido feito para corrigi-lo.
+
+Por muito tempo, eu acreditava firmemente que a Microsoft acabaria por ter que resolver a situação do navegador. O mundo estava avançando, o desenvolvimento frondend estava crescendo e o IE não estava acompanhando. Quando a Microsoft anunciou o movimento para usar o Chromium como base para a nova direção do navegador. Eu sabia que era apenas uma questão de tempo até que as Wails pudessem usá-lo, e mova a experiência de desenvolvedor do Windows para o próximo nível.
+
+Hoje, estou contente em anunciar: **Wails v2 Beta para Windows**! Há uma enorme quantidade para descompactar esta atualização, então tome uma bebida, sente-se e nós começaremos...
+
+### Sem dependência CGO!
+
+Não, não estou brincando: _Não_ _CGO_ _dependência_🤯! O problema do Windows é que, diferentemente do MacOS e do Linux, ele não vem com um compilador padrão. Além disso, CGO requer um compilador mingw e há uma tonelada de diferentes opções de instalação. A remoção do requisito de CGO tem uma configuração simplificada massivamente, bem como tornar a depuração muito mais fácil. Embora eu tenha me esforçado bastante para fazer isso funcionar, a maioria dos o crédito deveria ir para [John Chadwick](https://github.com/jchv) por não apenas iniciar alguns projetos para fazer isso possível, mas também estar aberto a alguém que assuma esses projetos e os desenvolva. Crédito também a [Tad Vizbaras](https://github.com/tadvi) cujo projeto [winc](https://github.com/tadvi/winc) me iniciou por este caminho.
+
+### Renderizador Chromium WebView2
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/devtools.png").default}
+    width="75%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Finalmente, os desenvolvedores do Windows recebem um mecanismo de renderização de primeira classe para as suas aplicações! Já se foram dias de contorno seu código frontend para funcionar no Windows. Além disso, você tem uma experiência de ferramentas de desenvolvedor de primeira classe!
+
+O componente WebView2 tem, no entanto, um requisito para que o `WebView2Loader.dll` fique lado a lado com o binário. Isso faz com que a distribuição seja um pouco mais dolorosa do que nós gophers gostamos de ver. Todas as soluções e bibliotecas (que eu conheço) que usam WebView2 têm essa dependência.
+
+No entanto, estou muito animado em anunciar que os aplicativos Wails _não têm tal exigência_! Obrigado à magia de [John Chadwick](https://github.com/jchv), nós somos capazes de agregar essa barra dentro do binário e fazer com que o Windows carregue como se estivesse presente no disco.
+
+Gophers se alegram! O sonho binário único continua vivo!
+
+### Novos Recursos
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/wails-menus.webp").default}
+    width="60%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Houve muitas solicitações para o suporte ao menu nativo. Wails finalmente ajudou você. Os menus de aplicativo agora estão disponíveis e incluem suporte para a maioria dos recursos do menu nativo. Isto inclui itens de menu padrão, caixas de seleção, grupos de rádio, submenus e separadores.
+
+Houve um grande número de pedidos na v1 no sentido de se conseguir um maior controlo da própria janela. Estou feliz em anunciar que há novas APIs de tempo de execução especificamente para isso. Ele é rico em recursos e suporta configurações multi-monitores. Há também uma API de diálogos aprimorada: agora você pode ter diálogos com configuração avançada para atender a todas as suas necessidades de diálogo.
+
+Agora há a opção de gerar a configuração do IDE junto com o seu projeto. Isto significa que se você abrir o seu projeto em um IDE suportado, ele já será configurado para construir e depurar sua aplicação. Atualmente o VSCode é suportado mas esperamos dar suporte a outros IDEs como o Goland em breve.
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/vscode.webp").default}
+    width="100%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+### Nenhum requisito para empacotar assets
+
+Um grande problema da v1 foi a necessidade de condensar todo o seu aplicativo em um único JS & Arquivos CSS. Estou feliz em anunciar que para v2, não há nenhum requisito de agrupar assets, de qualquer forma. Quer carregar uma imagem local? Use uma tag `<img>` com um caminho de src local. Quer usar uma fonte legal? Copie ele e adicione o caminho para ele em seu CSS.
+
+> Uau, isso soa como um servidor web...
+
+Sim, funciona como um servidor web, mas não é.
+
+> Então, como incluo meus assets?
+
+Você apenas passa um único `embed.FS` que contém todos os seus assets na configuração da sua aplicação. Eles nem precisam estar no diretório superior - o Wails resolverá isso para você.
+
+### Nova Experiência de Desenvolvimento
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/browser.webp").default}
+    width="60%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Agora que os ativos não precisam ser agrupados, foi possível uma experiência de desenvolvimento totalmente nova. O novo comando `wail dev` irá construir e executar seu aplicativo, mas em vez de usar os ativos do `incorporados. S`, carrega-os diretamente do disco.
+
+Ele também fornece os recursos adicionais:
+
+- Carregamento automatico - Quaisquer mudanças nos recursos do frontend irão ativar e recarregar automaticamente o frontend do aplicativo
+- Reconstrução automática - Qualquer alteração ao seu código Go irá reconstruir e reiniciar seu aplicativo
+
+Além disso, um servidor web iniciará na porta 34115. Isso servirá seu aplicativo para qualquer navegador que conecta a ele. Todos os navegadores web conectados responderão a eventos do sistema como recarregar rapidamente na alteração de ativos.
+
+Em Go, estamos acostumados a lidar com estruturas em nossas aplicações. Muitas vezes é útil enviar estruturas para nosso frontend e use-os como estado em nosso aplicativo. Na v1, este foi um processo muito manual e um pouco de sobrecarga para o desenvolvedor. Tenho prazer em anunciar isso em v2, qualquer aplicativo executado no modo de desenvolvimento irá gerar automaticamente modelos TypeScript para todas as construções que são entradas ou parâmetros de saída para métodos vinculados. Isso permite uma troca perfeita de dados modelos entre os dois mundos.
+
+Além disso, outro módulo JS é gerado dinamicamente todos os seus métodos de vinculação. Isso fornece JSDoc para seus métodos, fornecendo a conclusão de código e dicas em seu IDE. É muito legal quando você obtém modelos de dados auto-importado quando atinge a aba em um módulo gerado automaticamente embrulhando o seu código Go!
+
+### Modelos Remotos
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/remote.webp").default}
+    width="60%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Colocar um aplicativo em funcionamento rapidamente sempre foi um objetivo importante do projeto Wails. Quando lançamos, tentamos cobrir muitos dos frameworks modernos no momento: react, vue e angular. O mundo do desenvolvimento frontend é muito teimoso, rápido e difícil de manter no controle! Como resultado, descobrimos que nossos modelos básicos estavam bastante desatualizados rapidamente e isso causou uma dor de cabeça de manutenção. Também significava que não tínhamos modelos modernos legais para os mais recentes e os maiores cumes tecnológicos.
+
+Com a v2, eu queria capacitar a comunidade, dando a vocês a capacidade de criar e hospedar modelos por conta própria, em vez de do que confiar no projeto Wails. Então agora você pode criar projetos usando templates suportados pela comunidade! Espero que isto vá inspirar os desenvolvedores a criar um ecossistema vibrante de modelos de projeto. Estou realmente animado com o que a comunidade de desenvolvedores pode criar!
+
+### Em conclusão
+
+As trilhas v2 representam uma nova fundação para o projeto. O objetivo desta versão é obter feedback sobre a nova abordagem e aperfeiçoar quaisquer erros antes de uma versão completa. Sua opinião seria muito bem-vinda. Por favor, direcione qualquer feedback para o fórum de discussão [Beta](https://github.com/wailsapp/wails/discussions/828).
+
+Houve muitas reviravoltas, pivots e reviravoltas para chegar a este ponto. Isto deveu-se em parte a decisões técnicas iniciais isso precisava ser mudado, e em parte porque alguns problemas principais para os quais passamos tempo criando soluções alternativas foram corrigidos no upstream: O recurso de incorporação do Go é um bom exemplo. Felizmente, tudo se juntou no momento certo, e hoje nós temos a melhor solução que podemos ter. Eu acredito que a espera tem valido a pena - isto não teria sido possível até 2 meses atrás.
+
+Eu também preciso dar um enorme agradecimento :pray: às seguintes pessoas, porque sem elas essa liberação não existiria:
+
+- [Misite Bao](https://github.com/misitebao) - Um cavalo de trabalho absoluto sobre as traduções chinesas e uma incrível busca de bugs.
+- [John Chadwick](https://github.com/jchv) - Seu excelente trabalho no [go-webview2](https://github.com/jchv/go-webview2) e [go-winloader](https://github.com/jchv/go-winloader) tornaram a versão do Windows que temos hoje possível.
+- [Tad Vizbaras](https://github.com/tadvi) - Experimentar seu projeto [winc](https://github.com/tadvi/winc) foi o primeiro passo para um Go Wails puro.
+- [Mat Ryer](https://github.com/matryer) - Seu apoio, encorajamento e feedback realmente ajudaram a impulsionar o projeto.
+
+E finalmente, eu gostaria de agradecer especialmente a todos os patrocinadores [do projeto](/credits#sponsors), incluindo [JetBrains](https://www.jetbrains.com?from=Wails), cujo suporte dirige o projeto de muitas formas nos bastidores.
+
+Estou ansioso para ver o que as pessoas construirão com Wails nesta próxima fase emocionante do projeto!
+
+Lea.
+
+PS: MacOS e usuários do Linux não precisam de se sentir esquecidos - o facto de se portar para esta nova fundação está activamente em curso e a maior parte do trabalho árduo já foi feito. Aguenta firme!
+
+PPS: Se você ou sua empresa consideram o Wails útil, considere [patrocinar o projeto](https://github.com/sponsors/leaanthony). Obrigado!

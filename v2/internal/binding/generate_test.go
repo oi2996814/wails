@@ -2,7 +2,39 @@ package binding
 
 import (
 	"testing"
+
+	"github.com/leaanthony/slicer"
+	"github.com/stretchr/testify/assert"
+	"github.com/wailsapp/wails/v2/internal/logger"
 )
+
+type BindForTest struct {
+}
+
+func (b *BindForTest) GetA() A {
+	return A{}
+}
+
+type A struct {
+	B B `json:"B"`
+}
+
+type B struct {
+	Name string `json:"name"`
+}
+
+func TestNestedStruct(t *testing.T) {
+	bind := &BindForTest{}
+	testBindings := NewBindings(logger.New(nil), []interface{}{bind}, []interface{}{}, false, []interface{}{})
+
+	namesStrSlicer := testBindings.getAllStructNames()
+	names := []string{}
+	namesStrSlicer.Each(func(s string) {
+		names = append(names, s)
+	})
+	assert.Contains(t, names, "binding.A")
+	assert.Contains(t, names, "binding.B")
+}
 
 func Test_goTypeToJSDocType(t *testing.T) {
 
@@ -57,6 +89,11 @@ func Test_goTypeToJSDocType(t *testing.T) {
 			want:  "boolean",
 		},
 		{
+			name:  "interface{}",
+			input: "interface{}",
+			want:  "any",
+		},
+		{
 			name:  "[]byte",
 			input: "[]byte",
 			want:  "string",
@@ -64,22 +101,48 @@ func Test_goTypeToJSDocType(t *testing.T) {
 		{
 			name:  "[]int",
 			input: "[]int",
-			want:  "Array.<number>",
+			want:  "Array<number>",
 		},
 		{
 			name:  "[]bool",
 			input: "[]bool",
-			want:  "Array.<boolean>",
+			want:  "Array<boolean>",
 		},
 		{
 			name:  "anything else",
 			input: "foo",
 			want:  "any",
 		},
+		{
+			name:  "map",
+			input: "map[string]float64",
+			want:  "Record<string, number>",
+		},
+		{
+			name:  "map",
+			input: "map[string]map[string]float64",
+			want:  "Record<string, Record<string, number>>",
+		},
+		{
+			name:  "types",
+			input: "main.SomeType",
+			want:  "main.SomeType",
+		},
+		{
+			name:  "primitive_generic",
+			input: "main.ListData[string]",
+			want:  "main.ListData_string_",
+		},
+		{
+			name:  "stdlib_generic",
+			input: "main.ListData[*net/http.Request]",
+			want:  "main.ListData_net_http_Request_",
+		},
 	}
+	var importNamespaces slicer.StringSlicer
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := goTypeToJSDocType(tt.input); got != tt.want {
+			if got := goTypeToJSDocType(tt.input, &importNamespaces); got != tt.want {
 				t.Errorf("goTypeToJSDocType() = %v, want %v", got, tt.want)
 			}
 		})

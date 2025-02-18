@@ -19,24 +19,26 @@ The electron alternative for Go
 class Listener {
     /**
      * Creates an instance of Listener.
+     * @param {string} eventName
      * @param {function} callback
      * @param {number} maxCallbacks
      * @memberof Listener
      */
-    constructor(callback, maxCallbacks) {
+    constructor(eventName, callback, maxCallbacks) {
+        this.eventName = eventName;
         // Default of -1 means infinite
-        maxCallbacks = maxCallbacks || -1;
+        this.maxCallbacks = maxCallbacks || -1;
         // Callback invokes the callback with the given data
         // Returns true if this listener should be destroyed
         this.Callback = (data) => {
             callback.apply(null, data);
             // If maxCallbacks is infinite, return false (do not destroy)
-            if (maxCallbacks === -1) {
+            if (this.maxCallbacks === -1) {
                 return false;
             }
             // Decrement maxCallbacks. Return true if now 0, otherwise false
-            maxCallbacks -= 1;
-            return maxCallbacks === 0;
+            this.maxCallbacks -= 1;
+            return this.maxCallbacks === 0;
         };
     }
 }
@@ -50,11 +52,13 @@ export const eventListeners = {};
  * @param {string} eventName
  * @param {function} callback
  * @param {number} maxCallbacks
+ * @returns {function} A function to cancel the listener
  */
 export function EventsOnMultiple(eventName, callback, maxCallbacks) {
     eventListeners[eventName] = eventListeners[eventName] || [];
-    const thisListener = new Listener(callback, maxCallbacks);
+    const thisListener = new Listener(eventName, callback, maxCallbacks);
     eventListeners[eventName].push(thisListener);
+    return () => listenerOff(thisListener);
 }
 
 /**
@@ -63,9 +67,10 @@ export function EventsOnMultiple(eventName, callback, maxCallbacks) {
  * @export
  * @param {string} eventName
  * @param {function} callback
+ * @returns {function} A function to cancel the listener
  */
 export function EventsOn(eventName, callback) {
-    EventsOnMultiple(eventName, callback, -1);
+    return EventsOnMultiple(eventName, callback, -1);
 }
 
 /**
@@ -74,9 +79,10 @@ export function EventsOn(eventName, callback) {
  * @export
  * @param {string} eventName
  * @param {function} callback
+ * @returns {function} A function to cancel the listener
  */
 export function EventsOnce(eventName, callback) {
-    EventsOnMultiple(eventName, callback, 1);
+    return EventsOnMultiple(eventName, callback, 1);
 }
 
 function notifyListeners(eventData) {
@@ -84,17 +90,17 @@ function notifyListeners(eventData) {
     // Get the event name
     let eventName = eventData.name;
 
-    // Check if we have any listeners for this event
-    if (eventListeners[eventName]) {
+    // Keep a list of listener indexes to destroy
+    const newEventListenerList = eventListeners[eventName]?.slice() || [];
 
-        // Keep a list of listener indexes to destroy
-        const newEventListenerList = eventListeners[eventName].slice();
+    // Check if we have any listeners for this event
+    if (newEventListenerList.length) {
 
         // Iterate listeners
-        for (let count = 0; count < eventListeners[eventName].length; count += 1) {
+        for (let count = newEventListenerList.length - 1; count >= 0; count -= 1) {
 
             // Get next listener
-            const listener = eventListeners[eventName][count];
+            const listener = newEventListenerList[count];
 
             let data = eventData.data;
 
@@ -107,7 +113,11 @@ function notifyListeners(eventData) {
         }
 
         // Update callbacks with new list of listeners
-        eventListeners[eventName] = newEventListenerList;
+        if (newEventListenerList.length === 0) {
+            removeListener(eventName);
+        } else {
+            eventListeners[eventName] = newEventListenerList;
+        }
     }
 }
 
@@ -150,10 +160,55 @@ export function EventsEmit(eventName) {
     window.WailsInvoke('EE' + JSON.stringify(payload));
 }
 
-export function EventsOff(eventName) {
+function removeListener(eventName) {
     // Remove local listeners
-    eventListeners.delete(eventName);
+    delete eventListeners[eventName];
 
     // Notify Go listeners
     window.WailsInvoke('EX' + eventName);
+}
+
+/**
+ * Off unregisters a listener previously registered with On,
+ * optionally multiple listeneres can be unregistered via `additionalEventNames`
+ *
+ * @param {string} eventName
+ * @param  {...string} additionalEventNames
+ */
+export function EventsOff(eventName, ...additionalEventNames) {
+    removeListener(eventName)
+
+    if (additionalEventNames.length > 0) {
+        additionalEventNames.forEach(eventName => {
+            removeListener(eventName)
+        })
+    }
+}
+
+/**
+ * Off unregisters all event listeners previously registered with On
+ */
+ export function EventsOffAll() {
+    const eventNames = Object.keys(eventListeners);
+    for (let i = 0; i !== eventNames.length; i++) {
+        removeListener(eventNames[i]);
+    }
+}
+
+/**
+ * listenerOff unregisters a listener previously registered with EventsOn
+ *
+ * @param {Listener} listener
+ */
+ function listenerOff(listener) {
+    const eventName = listener.eventName;
+    if (eventListeners[eventName] === undefined) return;
+
+    // Remove local listener
+    eventListeners[eventName] = eventListeners[eventName].filter(l => l !== listener);
+
+    // Clean up if there are no event listeners left
+    if (eventListeners[eventName].length === 0) {
+        removeListener(eventName);
+    }
 }

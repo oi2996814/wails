@@ -3,23 +3,13 @@
 package wails
 
 import (
-	app "github.com/wailsapp/wails/v2/internal/appng"
+	_ "github.com/wailsapp/wails/v2/internal/goversion" // Add Compile-Time version check for minimum go version
+	"github.com/wailsapp/wails/v2/pkg/application"
 	"github.com/wailsapp/wails/v2/pkg/options"
 )
 
 // Run creates an application based on the given config and executes it
 func Run(options *options.App) error {
-
-	// Call an Init method manually
-	err := Init()
-	if err != nil {
-		return err
-	}
-
-	mainapp, err := app.CreateApp(options)
-	if err != nil {
-		return err
-	}
-
-	return mainapp.Run()
+	mainApp := application.NewWithOptions(options)
+	return mainApp.Run()
 }

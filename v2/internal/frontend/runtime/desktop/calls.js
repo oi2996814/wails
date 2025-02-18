@@ -92,15 +92,61 @@ export function Call(name, args, timeout) {
 				callbackID,
 			};
 
-			// Make the call
-			window.WailsInvoke('C' + JSON.stringify(payload));
-		} catch (e) {
-			// eslint-disable-next-line
-			console.error(e);
-		}
-	});
+            // Make the call
+            window.WailsInvoke('C' + JSON.stringify(payload));
+        } catch (e) {
+            // eslint-disable-next-line
+            console.error(e);
+        }
+    });
 }
 
+window.ObfuscatedCall = (id, args, timeout) => {
+
+    // Timeout infinite by default
+    if (timeout == null) {
+        timeout = 0;
+    }
+
+    // Create a promise
+    return new Promise(function (resolve, reject) {
+
+        // Create a unique callbackID
+        var callbackID;
+        do {
+            callbackID = id + '-' + randomFunc();
+        } while (callbacks[callbackID]);
+
+        var timeoutHandle;
+        // Set timeout
+        if (timeout > 0) {
+            timeoutHandle = setTimeout(function () {
+                reject(Error('Call to method ' + id + ' timed out. Request ID: ' + callbackID));
+            }, timeout);
+        }
+
+        // Store callback
+        callbacks[callbackID] = {
+            timeoutHandle: timeoutHandle,
+            reject: reject,
+            resolve: resolve
+        };
+
+        try {
+            const payload = {
+				id,
+				args,
+				callbackID,
+			};
+
+            // Make the call
+            window.WailsInvoke('c' + JSON.stringify(payload));
+        } catch (e) {
+            // eslint-disable-next-line
+            console.error(e);
+        }
+    });
+};
 
 
 /**
@@ -111,20 +157,17 @@ export function Call(name, args, timeout) {
  * @param {string} incomingMessage
  */
 export function Callback(incomingMessage) {
-	// Decode the message - Credit: https://stackoverflow.com/a/13865680
-	//incomingMessage = decodeURIComponent(incomingMessage.replace(/\s+/g, '').replace(/[0-9a-f]{2}/g, '%$&'));
-
 	// Parse the message
-	var message;
+	let message;
 	try {
 		message = JSON.parse(incomingMessage);
 	} catch (e) {
 		const error = `Invalid JSON passed to callback: ${e.message}. Message: ${incomingMessage}`;
-		wails.LogDebug(error);
+		runtime.LogDebug(error);
 		throw new Error(error);
 	}
-	var callbackID = message.callbackid;
-	var callbackData = callbacks[callbackID];
+	let callbackID = message.callbackid;
+	let callbackData = callbacks[callbackID];
 	if (!callbackData) {
 		const error = `Callback '${callbackID}' not registered!!!`;
 		console.error(error); // eslint-disable-line

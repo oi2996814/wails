@@ -3,16 +3,62 @@ package github
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/charmbracelet/glamour/styles"
 	"io"
 	"net/http"
+	"net/url"
+	"runtime"
 	"sort"
 	"strings"
+
+	"github.com/charmbracelet/glamour"
 )
+
+func GetReleaseNotes(tagVersion string, noColour bool) string {
+	resp, err := http.Get("https://api.github.com/repos/wailsapp/wails/releases/tags/" + url.PathEscape(tagVersion))
+	if err != nil {
+		return "Unable to retrieve release notes. Please check your network connection"
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "Unable to retrieve release notes. Please check your network connection"
+	}
+
+	data := map[string]interface{}{}
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		return "Unable to retrieve release notes. Please check your network connection"
+	}
+
+	if data["body"] == nil {
+		return "No release notes found"
+	}
+
+	result := "# Release Notes for " + tagVersion + "\n" + data["body"].(string)
+	var renderer *glamour.TermRenderer
+
+	var termRendererOpts []glamour.TermRendererOption
+
+	if runtime.GOOS == "windows" || noColour {
+		termRendererOpts = append(termRendererOpts, glamour.WithStyles(styles.NoTTYStyleConfig))
+	} else {
+		termRendererOpts = append(termRendererOpts, glamour.WithAutoStyle())
+	}
+
+	renderer, err = glamour.NewTermRenderer(termRendererOpts...)
+	if err != nil {
+		return result
+	}
+	result, err = renderer.Render(result)
+	if err != nil {
+		return err.Error()
+	}
+	return result
+}
 
 // GetVersionTags gets the list of tags on the Wails repo
 // It returns a list of sorted tags in descending order
 func GetVersionTags() ([]*SemanticVersion, error) {
-
 	result := []*SemanticVersion{}
 	var err error
 
@@ -52,7 +98,6 @@ func GetVersionTags() ([]*SemanticVersion, error) {
 
 // GetLatestStableRelease gets the latest stable release on GitHub
 func GetLatestStableRelease() (result *SemanticVersion, err error) {
-
 	tags, err := GetVersionTags()
 	if err != nil {
 		return nil, err
@@ -69,7 +114,6 @@ func GetLatestStableRelease() (result *SemanticVersion, err error) {
 
 // GetLatestPreRelease gets the latest prerelease on GitHub
 func GetLatestPreRelease() (result *SemanticVersion, err error) {
-
 	tags, err := GetVersionTags()
 	if err != nil {
 		return nil, err

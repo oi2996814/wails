@@ -1,4 +1,4 @@
-//go:build production && desktop
+//go:build production && !debug
 
 package runtime
 

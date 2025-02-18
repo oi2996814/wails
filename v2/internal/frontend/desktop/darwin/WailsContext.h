@@ -10,6 +10,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#import "WailsWebView.h"
 
 #if __has_include(<UniformTypeIdentifiers/UTType.h>)
 #define USE_NEW_FILTERS
@@ -29,10 +30,10 @@
 - (void) disableWindowConstraints;
 @end
 
-@interface WailsContext : NSObject <WKURLSchemeHandler,WKScriptMessageHandler,WKNavigationDelegate>
+@interface WailsContext : NSObject <WKURLSchemeHandler,WKScriptMessageHandler,WKNavigationDelegate,WKUIDelegate>
 
 @property (retain) WailsWindow* mainWindow;
-@property (retain) WKWebView* webview;
+@property (retain) WailsWebView* webview;
 @property (nonatomic, assign) id appdelegate;
 
 @property bool hideOnClose;
@@ -40,14 +41,17 @@
 @property bool startHidden;
 @property bool startFullscreen;
 
+@property bool singleInstanceLockEnabled;
+@property (retain) NSString* singleInstanceUniqueId;
+
 @property (retain) NSEvent* mouseEvent;
 
 @property bool alwaysOnTop;
 
-@property bool debug;
+@property bool devtoolsEnabled;
+@property bool defaultContextMenuEnabled;
 
 @property (retain) WKUserContentController* userContentController;
-@property (retain) NSMutableDictionary *urlRequests;
 
 @property (retain) NSMenu* applicationMenu;
 
@@ -55,24 +59,37 @@
 @property (retain) NSString* aboutTitle;
 @property (retain) NSString* aboutDescription;
 
-- (void) CreateWindow:(int)width :(int)height :(bool)frameless :(bool)resizable :(bool)fullscreen :(bool)fullSizeContent :(bool)hideTitleBar :(bool)titlebarAppearsTransparent  :(bool)hideTitle :(bool)useToolbar :(bool)hideToolbarSeparator :(bool)webviewIsTransparent :(bool)hideWindowOnClose :(NSString *)appearance :(bool)windowIsTranslucent :(int)minWidth :(int)minHeight :(int)maxWidth :(int)maxHeight;
+struct Preferences {
+  bool *tabFocusesLinks;
+  bool *textInteractionEnabled;
+  bool *fullscreenEnabled;
+};
+
+- (void) CreateWindow:(int)width :(int)height :(bool)frameless :(bool)resizable :(bool)zoomable :(bool)fullscreen :(bool)fullSizeContent :(bool)hideTitleBar :(bool)titlebarAppearsTransparent  :(bool)hideTitle :(bool)useToolbar :(bool)hideToolbarSeparator :(bool)webviewIsTransparent :(bool)hideWindowOnClose :(NSString *)appearance :(bool)windowIsTranslucent :(int)minWidth :(int)minHeight :(int)maxWidth :(int)maxHeight :(bool)fraudulentWebsiteWarningEnabled :(struct Preferences)preferences :(bool)enableDragAndDrop :(bool)disableWebViewDragAndDrop;
 - (void) SetSize:(int)width :(int)height;
 - (void) SetPosition:(int)x :(int) y;
 - (void) SetMinSize:(int)minWidth :(int)minHeight;
 - (void) SetMaxSize:(int)maxWidth :(int)maxHeight;
 - (void) SetTitle:(NSString*)title;
+- (void) SetAlwaysOnTop:(int)onTop;
 - (void) Center;
 - (void) Fullscreen;
 - (void) UnFullscreen;
+- (bool) IsFullScreen;
 - (void) Minimise;
 - (void) UnMinimise;
+- (bool) IsMinimised;
 - (void) Maximise;
+- (void) ToggleMaximise;
 - (void) UnMaximise;
-- (void) SetRGBA:(int)r :(int)g :(int)b :(int)a;
+- (bool) IsMaximised;
+- (void) SetBackgroundColour:(int)r :(int)g :(int)b :(int)a;
 - (void) HideMouse;
 - (void) ShowMouse;
 - (void) Hide;
 - (void) Show;
+- (void) HideApplication;
+- (void) ShowApplication;
 - (void) Quit;
 
 -(void) MessageDialog :(NSString*)dialogType :(NSString*)title :(NSString*)message :(NSString*)button1 :(NSString*)button2 :(NSString*)button3 :(NSString*)button4 :(NSString*)defaultButton :(NSString*)cancelButton :(void*)iconData :(int)iconDataLength;
@@ -80,7 +97,6 @@
 - (void) SaveFileDialog :(NSString*)title :(NSString*)defaultFilename :(NSString*)defaultDirectory :(bool)canCreateDirectories :(bool)treatPackagesAsDirectories :(bool)showHiddenFiles :(NSString*)filters;
 
 - (void) loadRequest:(NSString*)url;
-- (void) processURLResponse:(NSString *)url :(int)statusCode :(NSString *)contentType :(NSData*)data;
 - (void) ExecJS:(NSString*)script;
 - (NSScreen*) getCurrentScreen;
 

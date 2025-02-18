@@ -32,6 +32,7 @@ func (y *Dnf) Packages() packagemap {
 			{Name: "gtk3-devel", SystemPackage: true, Library: true},
 		},
 		"libwebkit": []*Package{
+			{Name: "webkit2gtk4.0-devel", SystemPackage: true, Library: true},
 			{Name: "webkit2gtk3-devel", SystemPackage: true, Library: true},
 			// {Name: "webkitgtk3-devel", SystemPackage: true, Library: true},
 		},
@@ -43,6 +44,7 @@ func (y *Dnf) Packages() packagemap {
 		},
 		"npm": []*Package{
 			{Name: "npm", SystemPackage: true},
+			{Name: "nodejs-npm", SystemPackage: true},
 		},
 		"upx": []*Package{
 			{Name: "upx", SystemPackage: true, Optional: true},
@@ -56,6 +58,7 @@ func (y *Dnf) Packages() packagemap {
 					"fedora": "Follow the guide: https://docs.docker.com/engine/install/fedora/",
 				},
 			},
+			{Name: "moby-engine", SystemPackage: true, Optional: true},
 		},
 	}
 }

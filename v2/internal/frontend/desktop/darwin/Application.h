@@ -17,12 +17,13 @@
 #define WindowStartsMinimised 2
 #define WindowStartsFullscreen 3
 
-WailsContext* Create(const char* title, int width, int height, int frameless, int resizable, int fullscreen, int fullSizeContent, int hideTitleBar, int titlebarAppearsTransparent, int hideTitle, int useToolbar, int hideToolbarSeparator, int webviewIsTransparent, int alwaysOnTop, int hideWindowOnClose, const char *appearance, int windowIsTranslucent, int debug, int windowStartState, int startsHidden, int minWidth, int minHeight, int maxWidth, int maxHeight);
-void Run(void*);
+WailsContext* Create(const char* title, int width, int height, int frameless, int resizable, int zoomable, int fullscreen, int fullSizeContent, int hideTitleBar, int titlebarAppearsTransparent, int hideTitle, int useToolbar, int hideToolbarSeparator, int webviewIsTransparent, int alwaysOnTop, int hideWindowOnClose, const char *appearance, int windowIsTranslucent, int devtoolsEnabled, int defaultContextMenuEnabled, int windowStartState, int startsHidden, int minWidth, int minHeight, int maxWidth, int maxHeight, bool fraudulentWebsiteWarningEnabled, struct Preferences preferences, int singleInstanceEnabled, const char* singleInstanceUniqueId, bool enableDragAndDrop, bool disableWebViewDragAndDrop);
+void Run(void*, const char* url);
 
 void SetTitle(void* ctx, const char *title);
 void Center(void* ctx);
 void SetSize(void* ctx, int width, int height);
+void SetAlwaysOnTop(void* ctx, int onTop);
 void SetMinSize(void* ctx, int width, int height);
 void SetMaxSize(void* ctx, int width, int height);
 void SetPosition(void* ctx, int x, int y);
@@ -30,18 +31,23 @@ void Fullscreen(void* ctx);
 void UnFullscreen(void* ctx);
 void Minimise(void* ctx);
 void UnMinimise(void* ctx);
+void ToggleMaximise(void* ctx);
 void Maximise(void* ctx);
 void UnMaximise(void* ctx);
 void Hide(void* ctx);
 void Show(void* ctx);
-void SetRGBA(void* ctx, int r, int g, int b, int a);
+void HideApplication(void* ctx);
+void ShowApplication(void* ctx);
+void SetBackgroundColour(void* ctx, int r, int g, int b, int a);
 void ExecJS(void* ctx, const char*);
 void Quit(void*);
+void WindowPrint(void* ctx);
 
 const char* GetSize(void *ctx);
-const char* GetPos(void *ctx);
-
-void ProcessURLResponse(void *inctx, const char *url, int statusCode, const char *contentType, void* data, int datalength);
+const char* GetPosition(void *ctx);
+const bool IsFullScreen(void *ctx);
+const bool IsMinimised(void *ctx);
+const bool IsMaximised(void *ctx);
 
 /* Dialogs */
 
@@ -60,6 +66,8 @@ void SetAbout(void *inctx, const char* title, const char* description, void* ima
 void* AppendMenuItem(void* inctx, void* nsmenu, const char* label, const char* shortcutKey, int modifiers, int disabled, int checked, int menuItemID);
 void AppendSeparator(void* inMenu);
 void UpdateMenuItem(void* nsmenuitem, int checked);
+void RunMainLoop(void);
+void ReleaseContext(void *inctx);
 
 NSString* safeInit(const char* input);
 

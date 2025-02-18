@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"encoding/json"
 	"errors"
+
 	"github.com/wailsapp/wails/v2/internal/frontend"
 )
 
@@ -23,7 +24,7 @@ func (d *Dispatcher) processEventMessage(message string, sender frontend.Fronten
 		if err != nil {
 			return "", err
 		}
-		go d.events.Notify(sender, eventMessage.Name, eventMessage.Data)
+		go d.events.Notify(sender, eventMessage.Name, eventMessage.Data...)
 	case 'X':
 		eventName := message[2:]
 		go d.events.Off(eventName)

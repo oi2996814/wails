@@ -18,10 +18,10 @@ func WindowFullscreen(ctx context.Context) {
 	appFrontend.WindowFullscreen()
 }
 
-// WindowUnFullscreen makes the window UnFullscreen
-func WindowUnFullscreen(ctx context.Context) {
+// WindowUnfullscreen makes the window UnFullscreen
+func WindowUnfullscreen(ctx context.Context) {
 	appFrontend := getFrontend(ctx)
-	appFrontend.WindowUnFullscreen()
+	appFrontend.WindowUnfullscreen()
 }
 
 // WindowCenter the window on the current screen
@@ -34,6 +34,27 @@ func WindowCenter(ctx context.Context) {
 func WindowReload(ctx context.Context) {
 	appFrontend := getFrontend(ctx)
 	appFrontend.WindowReload()
+}
+
+// WindowReloadApp will reload the application
+func WindowReloadApp(ctx context.Context) {
+	appFrontend := getFrontend(ctx)
+	appFrontend.WindowReloadApp()
+}
+
+func WindowSetSystemDefaultTheme(ctx context.Context) {
+	appFrontend := getFrontend(ctx)
+	appFrontend.WindowSetSystemDefaultTheme()
+}
+
+func WindowSetLightTheme(ctx context.Context) {
+	appFrontend := getFrontend(ctx)
+	appFrontend.WindowSetLightTheme()
+}
+
+func WindowSetDarkTheme(ctx context.Context) {
+	appFrontend := getFrontend(ctx)
+	appFrontend.WindowSetDarkTheme()
 }
 
 // WindowShow shows the window if hidden
@@ -71,21 +92,33 @@ func WindowSetMaxSize(ctx context.Context, width int, height int) {
 	appFrontend.WindowSetMaxSize(width, height)
 }
 
+// WindowSetAlwaysOnTop sets the window AlwaysOnTop or not on top
+func WindowSetAlwaysOnTop(ctx context.Context, b bool) {
+	appFrontend := getFrontend(ctx)
+	appFrontend.WindowSetAlwaysOnTop(b)
+}
+
 // WindowSetPosition sets the position of the window
 func WindowSetPosition(ctx context.Context, x int, y int) {
 	appFrontend := getFrontend(ctx)
-	appFrontend.WindowSetPos(x, y)
+	appFrontend.WindowSetPosition(x, y)
 }
 
-func WindowGetPos(ctx context.Context) (int, int) {
+func WindowGetPosition(ctx context.Context) (int, int) {
 	appFrontend := getFrontend(ctx)
-	return appFrontend.WindowGetPos()
+	return appFrontend.WindowGetPosition()
 }
 
 // WindowMaximise the window
 func WindowMaximise(ctx context.Context) {
 	appFrontend := getFrontend(ctx)
 	appFrontend.WindowMaximise()
+}
+
+// WindowToggleMaximise the window
+func WindowToggleMaximise(ctx context.Context) {
+	appFrontend := getFrontend(ctx)
+	appFrontend.WindowToggleMaximise()
 }
 
 // WindowUnmaximise the window
@@ -106,7 +139,48 @@ func WindowUnminimise(ctx context.Context) {
 	appFrontend.WindowUnminimise()
 }
 
-func WindowSetRGBA(ctx context.Context, col *options.RGBA) {
+// WindowIsFullscreen get the window state is window Fullscreen
+func WindowIsFullscreen(ctx context.Context) bool {
 	appFrontend := getFrontend(ctx)
-	appFrontend.WindowSetRGBA(col)
+	return appFrontend.WindowIsFullscreen()
+}
+
+// WindowIsMaximised get the window state is window Maximised
+func WindowIsMaximised(ctx context.Context) bool {
+	appFrontend := getFrontend(ctx)
+	return appFrontend.WindowIsMaximised()
+}
+
+// WindowIsMinimised get the window state is window Minimised
+func WindowIsMinimised(ctx context.Context) bool {
+	appFrontend := getFrontend(ctx)
+	return appFrontend.WindowIsMinimised()
+}
+
+// WindowIsNormal get the window state is window Normal
+func WindowIsNormal(ctx context.Context) bool {
+	appFrontend := getFrontend(ctx)
+	return appFrontend.WindowIsNormal()
+}
+
+// WindowExecJS executes the given Js in the window
+func WindowExecJS(ctx context.Context, js string) {
+	appFrontend := getFrontend(ctx)
+	appFrontend.ExecJS(js)
+}
+
+func WindowSetBackgroundColour(ctx context.Context, R, G, B, A uint8) {
+	appFrontend := getFrontend(ctx)
+	col := &options.RGBA{
+		R: R,
+		G: G,
+		B: B,
+		A: A,
+	}
+	appFrontend.WindowSetBackgroundColour(col)
+}
+
+func WindowPrint(ctx context.Context) {
+	appFrontend := getFrontend(ctx)
+	appFrontend.WindowPrint()
 }

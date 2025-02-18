@@ -10,14 +10,29 @@ The electron alternative for Go
 /* jshint esversion: 9 */
 import * as Log from './log';
 import {eventListeners, EventsEmit, EventsNotify, EventsOff, EventsOn, EventsOnce, EventsOnMultiple} from './events';
-import {Callback, callbacks} from './calls';
+import {Call, Callback, callbacks} from './calls';
 import {SetBindings} from "./bindings";
 import * as Window from "./window";
+import * as Screen from "./screen";
 import * as Browser from "./browser";
-
+import * as Clipboard from "./clipboard";
+import * as DragAndDrop from "./draganddrop";
+import * as ContextMenu from "./contextmenu";
 
 export function Quit() {
     window.WailsInvoke('Q');
+}
+
+export function Show() {
+    window.WailsInvoke('S');
+}
+
+export function Hide() {
+    window.WailsInvoke('H');
+}
+
+export function Environment() {
+    return Call(":wails:Environment");
 }
 
 // The JS runtime
@@ -25,11 +40,17 @@ window.runtime = {
     ...Log,
     ...Window,
     ...Browser,
+    ...Screen,
+    ...Clipboard,
+    ...DragAndDrop,
     EventsOn,
     EventsOnce,
     EventsOnMultiple,
     EventsEmit,
     EventsOff,
+    Environment,
+    Show,
+    Hide,
     Quit
 };
 
@@ -42,27 +63,65 @@ window.wails = {
     callbacks,
     flags: {
         disableScrollbarDrag: false,
-        disableWailsDefaultContextMenu: false,
+        disableDefaultContextMenu: false,
         enableResize: false,
-        defaultCursor: null
+        defaultCursor: null,
+        borderThickness: 6,
+        shouldDrag: false,
+        deferDragToMouseMove: true,
+        cssDragProperty: "--wails-draggable",
+        cssDragValue: "drag",
+        cssDropProperty: "--wails-drop-target",
+        cssDropValue: "drop",
+        enableWailsDragAndDrop: false,
     }
 };
 
 // Set the bindings
-window.wails.SetBindings(window.wailsbindings);
-delete window.wails.SetBindings;
+if (window.wailsbindings) {
+    window.wails.SetBindings(window.wailsbindings);
+    delete window.wails.SetBindings;
+}
 
-// This is evaluated at build time in package.json
-// const dev = 0;
-// const production = 1;
-if (ENV === 0) {
+// (bool) This is evaluated at build time in package.json
+if (!DEBUG) {
     delete window.wailsbindings;
 }
 
-// Setup drag handler
-// Based on code from: https://github.com/patr0nus/DeskGap
-window.addEventListener('mousedown', (e) => {
+let dragTest = function (e) {
+    var val = window.getComputedStyle(e.target).getPropertyValue(window.wails.flags.cssDragProperty);
+    if (val) {
+      val = val.trim();
+    }
+    
+    if (val !== window.wails.flags.cssDragValue) {
+        return false;
+    }
 
+    if (e.buttons !== 1) {
+        // Do not start dragging if not the primary button has been clicked.
+        return false;
+    }
+
+    if (e.detail !== 1) {
+        // Do not start dragging if more than once has been clicked, e.g. when double clicking
+        return false;
+    }
+
+    return true;
+};
+
+window.wails.setCSSDragProperties = function (property, value) {
+    window.wails.flags.cssDragProperty = property;
+    window.wails.flags.cssDragValue = value;
+}
+
+window.wails.setCSSDropProperties = function (property, value) {
+    window.wails.flags.cssDropProperty = property;
+    window.wails.flags.cssDropValue = value;
+}
+
+window.addEventListener('mousedown', (e) => {
     // Check for resizing
     if (window.wails.flags.resizeEdge) {
         window.WailsInvoke("resize:" + window.wails.flags.resizeEdge);
@@ -70,45 +129,56 @@ window.addEventListener('mousedown', (e) => {
         return;
     }
 
-    // Check for dragging
-    let currentElement = e.target;
-    while (currentElement != null) {
-        if (currentElement.hasAttribute('data-wails-no-drag')) {
-            break;
-        } else if (currentElement.hasAttribute('data-wails-drag')) {
-            if (window.wails.flags.disableScrollbarDrag) {
-                // This checks for clicks on the scroll bar
-                if (e.offsetX > e.target.clientWidth || e.offsetY > e.target.clientHeight) {
-                    break;
-                }
+    if (dragTest(e)) {
+        if (window.wails.flags.disableScrollbarDrag) {
+            // This checks for clicks on the scroll bar
+            if (e.offsetX > e.target.clientWidth || e.offsetY > e.target.clientHeight) {
+                return;
             }
-            window.WailsInvoke("drag");
-            e.preventDefault();
-            break;
         }
-        currentElement = currentElement.parentElement;
+        if (window.wails.flags.deferDragToMouseMove) {
+            window.wails.flags.shouldDrag = true;
+        } else {
+            e.preventDefault()
+            window.WailsInvoke("drag");
+        }
+        return;
+    } else {
+        window.wails.flags.shouldDrag = false;
     }
 });
 
+window.addEventListener('mouseup', () => {
+    window.wails.flags.shouldDrag = false;
+});
+
 function setResize(cursor) {
-    document.body.style.cursor = cursor || window.wails.flags.defaultCursor;
+    document.documentElement.style.cursor = cursor || window.wails.flags.defaultCursor;
     window.wails.flags.resizeEdge = cursor;
 }
 
 window.addEventListener('mousemove', function (e) {
+    if (window.wails.flags.shouldDrag) {
+        window.wails.flags.shouldDrag = false;
+        let mousePressed = e.buttons !== undefined ? e.buttons : e.which;
+        if (mousePressed > 0) {
+            window.WailsInvoke("drag");
+            return;
+        }
+    }
     if (!window.wails.flags.enableResize) {
         return;
     }
     if (window.wails.flags.defaultCursor == null) {
-        window.wails.flags.defaultCursor = document.body.style.cursor;
+        window.wails.flags.defaultCursor = document.documentElement.style.cursor;
     }
-    if (window.outerWidth - e.clientX < 16 && window.outerHeight - e.clientY < 16) {
-        document.body.style.cursor = "se-resize";
+    if (window.outerWidth - e.clientX < window.wails.flags.borderThickness && window.outerHeight - e.clientY < window.wails.flags.borderThickness) {
+        document.documentElement.style.cursor = "se-resize";
     }
-    let rightBorder = window.outerWidth - e.clientX < 16;
-    let leftBorder = e.clientX < 16;
-    let topBorder = e.clientY < 16;
-    let bottomBorder = window.outerHeight - e.clientY < 16;
+    let rightBorder = window.outerWidth - e.clientX < window.wails.flags.borderThickness;
+    let leftBorder = e.clientX < window.wails.flags.borderThickness;
+    let topBorder = e.clientY < window.wails.flags.borderThickness;
+    let bottomBorder = window.outerHeight - e.clientY < window.wails.flags.borderThickness;
 
     // If we aren't on an edge, but were, reset the cursor to default
     if (!leftBorder && !rightBorder && !topBorder && !bottomBorder && window.wails.flags.resizeEdge !== undefined) {
@@ -126,7 +196,14 @@ window.addEventListener('mousemove', function (e) {
 
 // Setup context menu hook
 window.addEventListener('contextmenu', function (e) {
-    if (window.wails.flags.disableWailsDefaultContextMenu) {
+    // always show the contextmenu in debug & dev
+    if (DEBUG) return;
+
+    if (window.wails.flags.disableDefaultContextMenu) {
         e.preventDefault();
+    } else {
+        ContextMenu.processDefaultContextMenu(e);
     }
 });
+
+window.WailsInvoke("runtime:ready");

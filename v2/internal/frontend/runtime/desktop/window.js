@@ -17,6 +17,22 @@ export function WindowReload() {
     window.location.reload();
 }
 
+export function WindowReloadApp() {
+    window.WailsInvoke('WR');
+}
+
+export function WindowSetSystemDefaultTheme() {
+    window.WailsInvoke('WASDT');
+}
+
+export function WindowSetLightTheme() {
+    window.WailsInvoke('WALT');
+}
+
+export function WindowSetDarkTheme() {
+    window.WailsInvoke('WADT');
+}
+
 /**
  * Place the window in the center of the screen
  *
@@ -50,8 +66,18 @@ export function WindowFullscreen() {
  *
  * @export
  */
-export function WindowUnFullscreen() {
+export function WindowUnfullscreen() {
     window.WailsInvoke('Wf');
+}
+
+/**
+ * Returns the state of the window, i.e. whether the window is in full screen mode or not.
+ *
+ * @export
+ * @return {Promise<boolean>} The state of the window
+ */
+export function WindowIsFullscreen() {
+    return Call(":wails:WindowIsFullscreen");
 }
 
 /**
@@ -97,6 +123,21 @@ export function WindowSetMaxSize(width, height) {
 export function WindowSetMinSize(width, height) {
     window.WailsInvoke('Wz:' + width + ':' + height);
 }
+
+
+
+/**
+ * Set the window AlwaysOnTop or not on top
+ *
+ * @export
+ */
+export function WindowSetAlwaysOnTop(b) {
+
+    window.WailsInvoke('WATP:' + (b ? '1' : '0'));
+}
+
+
+
 
 /**
  * Set the Position of the window
@@ -147,12 +188,31 @@ export function WindowMaximise() {
 }
 
 /**
+ * Toggle the Maximise of the Window
+ *
+ * @export
+ */
+export function WindowToggleMaximise() {
+    window.WailsInvoke('Wt');
+}
+
+/**
  * Unmaximise the Window
  *
  * @export
  */
 export function WindowUnmaximise() {
     window.WailsInvoke('WU');
+}
+
+/**
+ * Returns the state of the window, i.e. whether the window is maximised or not.
+ *
+ * @export
+ * @return {Promise<boolean>} The state of the window
+ */
+export function WindowIsMaximised() {
+    return Call(":wails:WindowIsMaximised");
 }
 
 /**
@@ -173,15 +233,37 @@ export function WindowUnminimise() {
     window.WailsInvoke('Wu');
 }
 
+/**
+ * Returns the state of the window, i.e. whether the window is minimised or not.
+ *
+ * @export
+ * @return {Promise<boolean>} The state of the window
+ */
+export function WindowIsMinimised() {
+    return Call(":wails:WindowIsMinimised");
+}
+
+/**
+ * Returns the state of the window, i.e. whether the window is normal or not.
+ *
+ * @export
+ * @return {Promise<boolean>} The state of the window
+ */
+export function WindowIsNormal() {
+    return Call(":wails:WindowIsNormal");
+}
 
 /**
  * Sets the background colour of the window
  *
  * @export
- * @param {RGBA} RGBA background colour
+ * @param {number} R Red
+ * @param {number} G Green
+ * @param {number} B Blue
+ * @param {number} A Alpha
  */
-export function WindowSetRGBA(RGBA) {
-    let rgba = JSON.stringify(RGBA);
+export function WindowSetBackgroundColour(R, G, B, A) {
+    let rgba = JSON.stringify({r: R || 0, g: G || 0, b: B || 0, a: A || 255});
     window.WailsInvoke('Wr:' + rgba);
 }
 

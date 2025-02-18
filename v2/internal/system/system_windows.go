@@ -4,7 +4,7 @@
 package system
 
 import (
-	"github.com/leaanthony/go-webview2/webviewloader"
+	"github.com/wailsapp/go-webview2/webviewloader"
 	"github.com/wailsapp/wails/v2/internal/system/operatingsystem"
 	"github.com/wailsapp/wails/v2/internal/system/packagemanager"
 )
@@ -19,19 +19,20 @@ func (i *Info) discover() error {
 	i.OS = osinfo
 
 	i.Dependencies = append(i.Dependencies, checkWebView2())
+	i.Dependencies = append(i.Dependencies, checkNodejs())
 	i.Dependencies = append(i.Dependencies, checkNPM())
 	i.Dependencies = append(i.Dependencies, checkUPX())
-	//i.Dependencies = append(i.Dependencies, checkDocker())
+	i.Dependencies = append(i.Dependencies, checkNSIS())
+	// i.Dependencies = append(i.Dependencies, checkDocker())
 
 	return nil
 }
 
-func checkWebView2() *packagemanager.Dependancy {
-
-	version, _ := webviewloader.GetInstalledVersion()
+func checkWebView2() *packagemanager.Dependency {
+	version, _ := webviewloader.GetAvailableCoreWebView2BrowserVersionString("")
 	installed := version != ""
 
-	return &packagemanager.Dependancy{
+	return &packagemanager.Dependency{
 		Name:           "WebView2 ",
 		PackageName:    "N/A",
 		Installed:      installed,

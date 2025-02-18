@@ -1,0 +1,170 @@
+---
+slug: wails-v2-beta-for-mac
+title: Wails v2 Beta para MacOS
+authors:
+  - leaanthony
+tags:
+  - wails
+  - v2
+---
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/wails-mac.webp").default}
+    width="60%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Hoje marca a primeira versão beta do Wails v2 para Mac! Demorou um pouco para chegar a este ponto e espero que o lançamento de hoje lhe dará algo razoavelmente útil. Houve uma série de reviravoltas e turnos para chegar a este ponto e estou esperando, com a sua ajuda, para passar as rugas e polir a porta Mac para a versão final do v2.
+
+Quer dizer que isso não está pronto para a produção? Para o seu caso de uso, ele pode estar pronto, mas ainda há vários problemas conhecidos, então fique de olho [neste quadro de projeto](https://github.com/wailsapp/wails/projects/7) e se desejar gostaria de contribuir, será muito bem-vindo!
+
+Então, o que há de novo para Wails v2 para Mac vs v1? Dica: É bem parecido com o Windows Beta :wink:
+
+### Novos Recursos
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/wails-menus-mac.webp").default}
+    width="80%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Houve muitas solicitações para o suporte ao menu nativo. Wails finalmente ajudou você. Os menus de aplicativo agora estão disponíveis e incluem suporte para a maioria dos recursos do menu nativo. Isto inclui itens de menu padrão, caixas de seleção, grupos de rádio, submenus e separadores.
+
+Houve um grande número de pedidos na v1 no sentido de se conseguir um maior controlo da própria janela. Estou feliz em anunciar que há novas APIs de tempo de execução especificamente para isso. Ele é rico em recursos e suporta configurações multi-monitores. Há também uma API de diálogos aprimorada: agora você pode ter diálogos com configuração avançada para atender a todas as suas necessidades de diálogo.
+
+### Opções especificas para Mac
+
+Além das opções normais do aplicativo, o Wails v2 para Mac também traz alguns extras:
+
+- Faça sua janela totalmente engraçada e translucente, como todos os aplicativos muito rápidos!
+- Barra de títulos altamente customizável
+- Nós suportamos as opções NSAppearance para o aplicativo
+- Configuração simples para criar automaticamente um menu "Sobre"
+
+### Nenhum requisito para empacotar assets
+
+Um grande problema da v1 foi a necessidade de condensar todo o seu aplicativo em um único JS & Arquivos CSS. Estou feliz em anunciar que para v2, não há nenhum requisito de agrupar assets, de qualquer forma. Quer carregar uma imagem local? Use uma tag `<img>` com um caminho de src local. Quer usar uma fonte legal? Copie ele e adicione o caminho para ele em seu CSS.
+
+> Uau, isso soa como um servidor web...
+
+Sim, funciona como um servidor web, mas não é.
+
+> Então, como incluo meus assets?
+
+Você apenas passa um único `embed.FS` que contém todos os seus assets na configuração da sua aplicação. Eles nem precisam estar no diretório superior - o Wails resolverá isso para você.
+
+### Nova Experiência de Desenvolvimento
+
+Agora que os ativos não precisam ser agrupados, foi possível uma experiência de desenvolvimento totalmente nova. O novo comando `wail dev` irá construir e executar seu aplicativo, mas em vez de usar os ativos do `incorporados. S`, carrega-os diretamente do disco.
+
+Ele também fornece os recursos adicionais:
+
+- Carregamento automatico - Quaisquer mudanças nos recursos do frontend irão ativar e recarregar automaticamente o frontend do aplicativo
+- Reconstrução automática - Qualquer alteração ao seu código Go irá reconstruir e reiniciar seu aplicativo
+
+Além disso, um servidor web iniciará na porta 34115. Isso servirá seu aplicativo para qualquer navegador que conecta a ele. Todos os navegadores web conectados responderão a eventos do sistema como recarregar rapidamente na alteração de ativos.
+
+Em Go, estamos acostumados a lidar com estruturas em nossas aplicações. Muitas vezes é útil enviar estruturas para nosso frontend e use-os como estado em nosso aplicativo. Na v1, este foi um processo muito manual e um pouco de sobrecarga para o desenvolvedor. Tenho prazer em anunciar isso em v2, qualquer aplicativo executado no modo de desenvolvimento irá gerar automaticamente modelos TypeScript para todas as construções que são entradas ou parâmetros de saída para métodos vinculados. Isso permite uma troca perfeita de dados modelos entre os dois mundos.
+
+Além disso, outro módulo JS é gerado dinamicamente todos os seus métodos de vinculação. Isso fornece JSDoc para seus métodos, fornecendo a conclusão de código e dicas em seu IDE. É muito legal quando você obtém modelos de dados auto-importado quando atinge a aba em um módulo gerado automaticamente embrulhando o seu código Go!
+
+### Modelos Remotos
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/remote-mac.webp").default}
+    width="80%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Colocar um aplicativo em funcionamento rapidamente sempre foi um objetivo importante do projeto Wails. Quando lançamos, tentamos cobrir muitos dos frameworks modernos no momento: react, vue e angular. O mundo do desenvolvimento frontend é muito teimoso, rápido e difícil de manter no controle! Como resultado, descobrimos que nossos modelos básicos estavam bastante desatualizados rapidamente e isso causou uma dor de cabeça de manutenção. Também significava que não tínhamos modelos modernos legais para os mais recentes e os maiores cumes tecnológicos.
+
+Com a v2, eu queria capacitar a comunidade, dando a vocês a capacidade de criar e hospedar modelos por conta própria, em vez de do que confiar no projeto Wails. Então agora você pode criar projetos usando templates suportados pela comunidade! Espero que isto vá inspirar os desenvolvedores a criar um ecossistema vibrante de modelos de projeto. Estou realmente animado com o que a comunidade de desenvolvedores pode criar!
+
+### Suporte Nativo M1
+
+Graças ao incrível apoio do [Ryer](https://github.com/matryer/)Mat, o projeto Wails agora suporta as construções nativas do M1:
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/build-darwin-arm.webp").default}
+    width="80%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Você também pode especificar `darwin/amd64` como um alvo também:
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/build-darwin-amd.webp").default}
+    width="80%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+Ah, eu quase esqueci... você também pode fazer `darwin/universal`.... :wink:
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/build-darwin-universal.webp").default}
+    width="80%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+### Compilação para Windows
+
+Como o Wails v2 para Windows é um Go, você pode direcionar versões do Windows sem o docker.
+
+```mdx-code-block
+<div class="text--center">
+  <img
+    src={require("@site/static/img/build-cross-windows.webp").default}
+    width="80%"
+    class="screenshot"
+  />
+</div>
+<br />
+```
+
+### Renderizador WKWebView
+
+V1 dependeu de um componente WebView (agora obsoleto). V2 usa o componente WKWebKit mais recente então espere o mais recente e o maior da Apple.
+
+### Em conclusão
+
+Como eu disse nas notas de lançamento do Windows, Wails v2 representa uma nova fundação para o projeto. O objetivo desta versão é obter feedback sobre a nova abordagem e aperfeiçoar quaisquer erros antes de uma versão completa. Sua opinião seria muito bem-vinda! Por favor, direcione qualquer feedback para o fórum de discussão [Beta](https://github.com/wailsapp/wails/discussions/828).
+
+E finalmente, eu gostaria de agradecer especialmente a todos os patrocinadores [do projeto](/credits#sponsors), incluindo [JetBrains](https://www.jetbrains.com?from=Wails), cujo suporte dirige o projeto de muitas formas nos bastidores.
+
+Estou ansioso para ver o que as pessoas construirão com Wails nesta próxima fase emocionante do projeto!
+
+Lea.
+
+PS: usuários do Linux, você será o próximo!
+
+PPS: Se você ou sua empresa consideram o Wails útil, considere [patrocinar o projeto](https://github.com/sponsors/leaanthony). Obrigado!

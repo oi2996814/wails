@@ -1,18 +1,18 @@
 package system
 
 import (
-	"github.com/wailsapp/wails/v2/internal/system/operatingsystem"
-	"github.com/wailsapp/wails/v2/internal/system/packagemanager"
 	"os/exec"
 	"strings"
+
+	"github.com/wailsapp/wails/v2/internal/shell"
+	"github.com/wailsapp/wails/v2/internal/system/operatingsystem"
+	"github.com/wailsapp/wails/v2/internal/system/packagemanager"
 )
 
-var (
-	IsAppleSilicon bool
-)
+var IsAppleSilicon bool
 
 // Info holds information about the current operating system,
-// package manager and required dependancies
+// package manager and required dependencies
 type Info struct {
 	OS           *operatingsystem.OS
 	PM           packagemanager.PackageManager
@@ -21,7 +21,7 @@ type Info struct {
 
 // GetInfo scans the system for operating system details,
 // the system package manager and the status of required
-// dependancies.
+// dependencies.
 func GetInfo() (*Info, error) {
 	var result Info
 	err := result.discover()
@@ -31,8 +31,30 @@ func GetInfo() (*Info, error) {
 	return &result, nil
 }
 
-func checkNPM() *packagemanager.Dependancy {
+func checkNodejs() *packagemanager.Dependency {
+	// Check for Nodejs
+	output, err := exec.Command("node", "-v").Output()
+	installed := true
+	version := ""
+	if err != nil {
+		installed = false
+	} else {
+		if len(output) > 0 {
+			version = strings.TrimSpace(strings.Split(string(output), "\n")[0])[1:]
+		}
+	}
+	return &packagemanager.Dependency{
+		Name:           "Nodejs",
+		PackageName:    "N/A",
+		Installed:      installed,
+		InstallCommand: "Available at https://nodejs.org/en/download/",
+		Version:        version,
+		Optional:       false,
+		External:       false,
+	}
+}
 
+func checkNPM() *packagemanager.Dependency {
 	// Check for npm
 	output, err := exec.Command("npm", "-version").Output()
 	installed := true
@@ -42,7 +64,7 @@ func checkNPM() *packagemanager.Dependancy {
 	} else {
 		version = strings.TrimSpace(strings.Split(string(output), "\n")[0])
 	}
-	return &packagemanager.Dependancy{
+	return &packagemanager.Dependency{
 		Name:           "npm ",
 		PackageName:    "N/A",
 		Installed:      installed,
@@ -53,8 +75,7 @@ func checkNPM() *packagemanager.Dependancy {
 	}
 }
 
-func checkUPX() *packagemanager.Dependancy {
-
+func checkUPX() *packagemanager.Dependency {
 	// Check for npm
 	output, err := exec.Command("upx", "-V").Output()
 	installed := true
@@ -64,7 +85,7 @@ func checkUPX() *packagemanager.Dependancy {
 	} else {
 		version = strings.TrimSpace(strings.Split(string(output), "\n")[0])
 	}
-	return &packagemanager.Dependancy{
+	return &packagemanager.Dependency{
 		Name:           "upx ",
 		PackageName:    "N/A",
 		Installed:      installed,
@@ -75,8 +96,45 @@ func checkUPX() *packagemanager.Dependancy {
 	}
 }
 
-func checkDocker() *packagemanager.Dependancy {
+func checkNSIS() *packagemanager.Dependency {
+	// Check for nsis installer
+	output, err := exec.Command("makensis", "-VERSION").Output()
+	installed := true
+	version := ""
+	if err != nil {
+		installed = false
+	} else {
+		version = strings.TrimSpace(strings.Split(string(output), "\n")[0])
+	}
+	return &packagemanager.Dependency{
+		Name:           "nsis ",
+		PackageName:    "N/A",
+		Installed:      installed,
+		InstallCommand: "More info at https://wails.io/docs/guides/windows-installer/",
+		Version:        version,
+		Optional:       true,
+		External:       false,
+	}
+}
 
+func checkLibrary(name string) func() *packagemanager.Dependency {
+	return func() *packagemanager.Dependency {
+		output, _, _ := shell.RunCommand(".", "pkg-config", "--cflags", name)
+		installed := len(strings.TrimSpace(output)) > 0
+
+		return &packagemanager.Dependency{
+			Name:           "lib" + name + " ",
+			PackageName:    "N/A",
+			Installed:      installed,
+			InstallCommand: "Install via your package manager",
+			Version:        "N/A",
+			Optional:       false,
+			External:       false,
+		}
+	}
+}
+
+func checkDocker() *packagemanager.Dependency {
 	// Check for npm
 	output, err := exec.Command("docker", "version").Output()
 	installed := true
@@ -99,7 +157,7 @@ func checkDocker() *packagemanager.Dependancy {
 			}
 		}
 	}
-	return &packagemanager.Dependancy{
+	return &packagemanager.Dependency{
 		Name:           "docker ",
 		PackageName:    "N/A",
 		Installed:      installed,

@@ -29,11 +29,11 @@ void processCallback(int callbackID) {
     NSLog(@"Process callback %d", callbackID);
 }
 
-void processURLRequest(void *ctx, const char* url) {
+void processURLRequest(void *ctx, unsigned long long requestId, const char* url, const char *method, const char *headers, const void *body, int bodyLen) {
     NSLog(@"processURLRequest called");
     const char myByteArray[] = { 0x3c,0x68,0x31,0x3e,0x48,0x65,0x6c,0x6c,0x6f,0x20,0x57,0x6f,0x72,0x6c,0x64,0x21,0x3c,0x2f,0x68,0x31,0x3e };
-    // void *inctx, const char *url, int statusCode, const char *contentType, void* data, int datalength
-    ProcessURLResponse(ctx, url, 200, "text/html", (void*)myByteArray, 21);
+    // void *inctx, const char *url, int statusCode, const char *headers, void* data, int datalength
+    ProcessURLResponse(ctx, requestId, 200, "{\"Content-Type\": \"text/html\"}", (void*)myByteArray, 21);
 }
 
 unsigned char _Users_username_Pictures_SaltBae_png[] = {
@@ -203,6 +203,7 @@ int main(int argc, const char * argv[]) {
     // insert code here...
     int frameless = 0;
     int resizable = 1;
+    int zoomable = 0;
     int fullscreen = 1;
     int fullSizeContent = 1;
     int hideTitleBar = 0;
@@ -215,12 +216,13 @@ int main(int argc, const char * argv[]) {
     int hideWindowOnClose = 0;
     const char* appearance = "NSAppearanceNameDarkAqua";
     int windowIsTranslucent = 1;
-    int debug = 1;
+    int devtoolsEnabled = 1;
+    int defaultContextMenuEnabled = 1;
     int windowStartState = 0;
     int startsHidden = 0;
-    WailsContext *result = Create("OI OI!",400,400, frameless,  resizable, fullscreen, fullSizeContent, hideTitleBar, titlebarAppearsTransparent, hideTitle, useToolbar, hideToolbarSeparator, webviewIsTransparent, alwaysOnTop, hideWindowOnClose, appearance, windowIsTranslucent, debug, windowStartState,
-                                  startsHidden, 400, 400, 600, 600);
-    SetRGBA(result, 255, 0, 0, 255);
+    WailsContext *result = Create("OI OI!",400,400, frameless, resizable, zoomable, fullscreen, fullSizeContent, hideTitleBar, titlebarAppearsTransparent, hideTitle, useToolbar, hideToolbarSeparator, webviewIsTransparent, alwaysOnTop, hideWindowOnClose, appearance, windowIsTranslucent, devtoolsEnabled, defaultContextMenuEnabled, windowStartState,
+                                  startsHidden, 400, 400, 600, 600, false);
+    SetBackgroundColour(result, 255, 0, 0, 255);
     void *m = NewMenu("");
     SetAbout(result, "Fake title", "I am a description", _Users_username_Pictures_SaltBae_png, _Users_username_Pictures_SaltBae_png_len);
 //    AddMenuByRole(result, 1);

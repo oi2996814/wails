@@ -4,19 +4,73 @@
 package linux
 
 /*
-#cgo linux pkg-config: gtk+-3.0 webkit2gtk-4.0
+#cgo linux pkg-config: gtk+-3.0 
+#cgo !webkit2_41 pkg-config: webkit2gtk-4.0
+#cgo webkit2_41 pkg-config: webkit2gtk-4.1
 
 #include "gtk/gtk.h"
 #include "webkit2/webkit2.h"
 
-extern void callDispatchedMethod(int id);
+// CREDIT: https://github.com/rainycape/magick
+#include <errno.h>
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
 
-static inline void processDispatchID(gpointer id) {
-    callDispatchedMethod(GPOINTER_TO_INT(id));
+static void fix_signal(int signum)
+{
+    struct sigaction st;
+
+    if (sigaction(signum, NULL, &st) < 0) {
+        goto fix_signal_error;
+    }
+    st.sa_flags |= SA_ONSTACK;
+    if (sigaction(signum, &st,  NULL) < 0) {
+        goto fix_signal_error;
+    }
+    return;
+fix_signal_error:
+        fprintf(stderr, "error fixing handler for signal %d, please "
+                "report this issue to "
+                "https://github.com/wailsapp/wails: %s\n",
+                signum, strerror(errno));
 }
 
-static void gtkDispatch(int id) {
-	gdk_threads_add_idle((GSourceFunc)processDispatchID, GINT_TO_POINTER(id));
+static void install_signal_handlers()
+{
+#if defined(SIGCHLD)
+    fix_signal(SIGCHLD);
+#endif
+#if defined(SIGHUP)
+    fix_signal(SIGHUP);
+#endif
+#if defined(SIGINT)
+    fix_signal(SIGINT);
+#endif
+#if defined(SIGQUIT)
+    fix_signal(SIGQUIT);
+#endif
+#if defined(SIGABRT)
+    fix_signal(SIGABRT);
+#endif
+#if defined(SIGFPE)
+    fix_signal(SIGFPE);
+#endif
+#if defined(SIGTERM)
+    fix_signal(SIGTERM);
+#endif
+#if defined(SIGBUS)
+    fix_signal(SIGBUS);
+#endif
+#if defined(SIGSEGV)
+    fix_signal(SIGSEGV);
+#endif
+#if defined(SIGXCPU)
+    fix_signal(SIGXCPU);
+#endif
+#if defined(SIGXFSZ)
+    fix_signal(SIGXFSZ);
+#endif
 }
 
 */
@@ -24,20 +78,33 @@ import "C"
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
-	"strconv"
+	"runtime"
+	"strings"
 	"sync"
 	"text/template"
 	"unsafe"
 
+	"github.com/wailsapp/wails/v2/pkg/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/assetserver/webview"
+
 	"github.com/wailsapp/wails/v2/internal/binding"
 	"github.com/wailsapp/wails/v2/internal/frontend"
-	"github.com/wailsapp/wails/v2/internal/frontend/assetserver"
-	"github.com/wailsapp/wails/v2/internal/frontend/desktop/common"
+	wailsruntime "github.com/wailsapp/wails/v2/internal/frontend/runtime"
 	"github.com/wailsapp/wails/v2/internal/logger"
 	"github.com/wailsapp/wails/v2/pkg/options"
 )
+
+var initOnce = sync.Once{}
+
+const startURL = "wails://wails/"
+
+var secondInstanceBuffer = make(chan options.SecondInstanceData, 1)
 
 type Frontend struct {
 
@@ -47,23 +114,39 @@ type Frontend struct {
 	frontendOptions *options.App
 	logger          *logger.Logger
 	debug           bool
+	devtoolsEnabled bool
 
 	// Assets
-	assets   *assetserver.DesktopAssetServer
-	startURL string
+	assets   *assetserver.AssetServer
+	startURL *url.URL
 
 	// main window handle
 	mainWindow *Window
-	// minWidth, minHeight, maxWidth, maxHeight int
-	bindings        *binding.Bindings
-	dispatcher      frontend.Dispatcher
-	servingFromDisk bool
+	bindings   *binding.Bindings
+	dispatcher frontend.Dispatcher
+}
+
+func (f *Frontend) RunMainLoop() {
+	C.gtk_main()
+}
+
+func (f *Frontend) WindowClose() {
+	f.mainWindow.Destroy()
 }
 
 func NewFrontend(ctx context.Context, appoptions *options.App, myLogger *logger.Logger, appBindings *binding.Bindings, dispatcher frontend.Dispatcher) *Frontend {
+	initOnce.Do(func() {
+		runtime.LockOSThread()
 
-	// Set GDK_BACKEND=x11 to prevent warnings
-	os.Setenv("GDK_BACKEND", "x11")
+		// Set GDK_BACKEND=x11 if currently unset and XDG_SESSION_TYPE is unset, unspecified or x11 to prevent warnings
+		if os.Getenv("GDK_BACKEND") == "" && (os.Getenv("XDG_SESSION_TYPE") == "" || os.Getenv("XDG_SESSION_TYPE") == "unspecified" || os.Getenv("XDG_SESSION_TYPE") == "x11") {
+			_ = os.Setenv("GDK_BACKEND", "x11")
+		}
+
+		if ok := C.gtk_init_check(nil, nil); ok != 1 {
+			panic(errors.New("failed to init GTK"))
+		}
+	})
 
 	result := &Frontend{
 		frontendOptions: appoptions,
@@ -71,49 +154,58 @@ func NewFrontend(ctx context.Context, appoptions *options.App, myLogger *logger.
 		bindings:        appBindings,
 		dispatcher:      dispatcher,
 		ctx:             ctx,
-		startURL:        "file://wails/",
 	}
+	result.startURL, _ = url.Parse(startURL)
 
-	bindingsJSON, err := appBindings.ToJSON()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	_devServerURL := ctx.Value("devserverurl")
-	if _devServerURL != nil {
-		devServerURL := _devServerURL.(string)
-		if len(devServerURL) > 0 && devServerURL != "http://localhost:34115" {
-			result.startURL = devServerURL
-			return result
+	if _starturl, _ := ctx.Value("starturl").(*url.URL); _starturl != nil {
+		result.startURL = _starturl
+	} else {
+		if port, _ := ctx.Value("assetserverport").(string); port != "" {
+			result.startURL.Host = net.JoinHostPort(result.startURL.Host+".localhost", port)
 		}
-	}
 
-	// Check if we have been given a directory to serve assets from.
-	// If so, this means we are in dev mode and are serving assets off disk.
-	// We indicate this through the `servingFromDisk` flag to ensure requests
-	// aren't cached by webkit.
+		var bindings string
+		var err error
+		if _obfuscated, _ := ctx.Value("obfuscated").(bool); !_obfuscated {
+			bindings, err = appBindings.ToJSON()
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else {
+			appBindings.DB().UpdateObfuscatedCallMap()
+		}
+		assets, err := assetserver.NewAssetServerMainPage(bindings, appoptions, ctx.Value("assetdir") != nil, myLogger, wailsruntime.RuntimeAssetsBundle)
+		if err != nil {
+			log.Fatal(err)
+		}
+		result.assets = assets
 
-	_assetdir := ctx.Value("assetdir")
-	if _assetdir != nil {
-		result.servingFromDisk = true
+		go result.startRequestProcessor()
 	}
-
-	assets, err := assetserver.NewDesktopAssetServer(ctx, appoptions.Assets, bindingsJSON)
-	if err != nil {
-		log.Fatal(err)
-	}
-	result.assets = assets
 
 	go result.startMessageProcessor()
-	go result.startRequestProcessor()
-
-	C.gtk_init(nil, nil)
 
 	var _debug = ctx.Value("debug")
+	var _devtoolsEnabled = ctx.Value("devtoolsEnabled")
+
 	if _debug != nil {
 		result.debug = _debug.(bool)
 	}
-	result.mainWindow = NewWindow(appoptions, result.debug)
+	if _devtoolsEnabled != nil {
+		result.devtoolsEnabled = _devtoolsEnabled.(bool)
+	}
+
+	result.mainWindow = NewWindow(appoptions, result.debug, result.devtoolsEnabled)
+
+	C.install_signal_handlers()
+
+	if appoptions.Linux != nil && appoptions.Linux.ProgramName != "" {
+		prgname := C.CString(appoptions.Linux.ProgramName)
+		C.g_set_prgname(prgname)
+		C.free(unsafe.Pointer(prgname))
+	}
+
+	go result.startSecondInstanceProcessor()
 
 	return result
 }
@@ -128,9 +220,20 @@ func (f *Frontend) WindowReload() {
 	f.ExecJS("runtime.WindowReload();")
 }
 
-func (f *Frontend) Run(ctx context.Context) error {
+func (f *Frontend) WindowSetSystemDefaultTheme() {
+	return
+}
 
-	f.ctx = context.WithValue(ctx, "frontend", f)
+func (f *Frontend) WindowSetLightTheme() {
+	return
+}
+
+func (f *Frontend) WindowSetDarkTheme() {
+	return
+}
+
+func (f *Frontend) Run(ctx context.Context) error {
+	f.ctx = ctx
 
 	go func() {
 		if f.frontendOptions.OnStartup != nil {
@@ -138,7 +241,11 @@ func (f *Frontend) Run(ctx context.Context) error {
 		}
 	}()
 
-	f.mainWindow.Run()
+	if f.frontendOptions.SingleInstanceLock != nil {
+		SetupSingleInstance(f.frontendOptions.SingleInstanceLock.UniqueId)
+	}
+
+	f.mainWindow.Run(f.startURL.String())
 
 	return nil
 }
@@ -147,11 +254,15 @@ func (f *Frontend) WindowCenter() {
 	f.mainWindow.Center()
 }
 
-func (f *Frontend) WindowSetPos(x, y int) {
-	f.mainWindow.SetPos(x, y)
+func (f *Frontend) WindowSetAlwaysOnTop(b bool) {
+	f.mainWindow.SetKeepAbove(b)
 }
-func (f *Frontend) WindowGetPos() (int, int) {
-	return f.mainWindow.Pos()
+
+func (f *Frontend) WindowSetPosition(x, y int) {
+	f.mainWindow.SetPosition(x, y)
+}
+func (f *Frontend) WindowGetPosition() (int, int) {
+	return f.mainWindow.GetPosition()
 }
 
 func (f *Frontend) WindowSetSize(width, height int) {
@@ -167,11 +278,21 @@ func (f *Frontend) WindowSetTitle(title string) {
 }
 
 func (f *Frontend) WindowFullscreen() {
+	if f.frontendOptions.Frameless && f.frontendOptions.DisableResize == false {
+		f.ExecJS("window.wails.flags.enableResize = false;")
+	}
 	f.mainWindow.Fullscreen()
 }
 
-func (f *Frontend) WindowUnFullscreen() {
+func (f *Frontend) WindowUnfullscreen() {
+	if f.frontendOptions.Frameless && f.frontendOptions.DisableResize == false {
+		f.ExecJS("window.wails.flags.enableResize = true;")
+	}
 	f.mainWindow.UnFullscreen()
+}
+
+func (f *Frontend) WindowReloadApp() {
+	f.ExecJS(fmt.Sprintf("window.location.href = '%s';", f.startURL))
 }
 
 func (f *Frontend) WindowShow() {
@@ -181,8 +302,19 @@ func (f *Frontend) WindowShow() {
 func (f *Frontend) WindowHide() {
 	f.mainWindow.Hide()
 }
+
+func (f *Frontend) Show() {
+	f.mainWindow.Show()
+}
+
+func (f *Frontend) Hide() {
+	f.mainWindow.Hide()
+}
 func (f *Frontend) WindowMaximise() {
 	f.mainWindow.Maximise()
+}
+func (f *Frontend) WindowToggleMaximise() {
+	f.mainWindow.ToggleMaximise()
 }
 func (f *Frontend) WindowUnmaximise() {
 	f.mainWindow.UnMaximise()
@@ -201,17 +333,47 @@ func (f *Frontend) WindowSetMaxSize(width int, height int) {
 	f.mainWindow.SetMaxSize(width, height)
 }
 
-func (f *Frontend) WindowSetRGBA(col *options.RGBA) {
+func (f *Frontend) WindowSetBackgroundColour(col *options.RGBA) {
 	if col == nil {
 		return
 	}
+	f.mainWindow.SetBackgroundColour(col.R, col.G, col.B, col.A)
+}
+
+func (f *Frontend) ScreenGetAll() ([]Screen, error) {
+	return GetAllScreens(f.mainWindow.asGTKWindow())
+}
+
+func (f *Frontend) WindowIsMaximised() bool {
+	return f.mainWindow.IsMaximised()
+}
+
+func (f *Frontend) WindowIsMinimised() bool {
+	return f.mainWindow.IsMinimised()
+}
+
+func (f *Frontend) WindowIsNormal() bool {
+	return f.mainWindow.IsNormal()
+}
+
+func (f *Frontend) WindowIsFullscreen() bool {
+	return f.mainWindow.IsFullScreen()
 }
 
 func (f *Frontend) Quit() {
-	if f.frontendOptions.OnBeforeClose != nil && f.frontendOptions.OnBeforeClose(f.ctx) {
+	if f.frontendOptions.OnBeforeClose != nil {
+		go func() {
+			if !f.frontendOptions.OnBeforeClose(f.ctx) {
+				f.mainWindow.Quit()
+			}
+		}()
 		return
 	}
 	f.mainWindow.Quit()
+}
+
+func (f *Frontend) WindowPrint() {
+	f.ExecJS("window.print();")
 }
 
 type EventNotify struct {
@@ -229,14 +391,77 @@ func (f *Frontend) Notify(name string, data ...interface{}) {
 		f.logger.Error(err.Error())
 		return
 	}
-	f.ExecJS(`window.wails.EventsNotify('` + template.JSEscapeString(string(payload)) + `');`)
+	f.mainWindow.ExecJS(`window.wails.EventsNotify('` + template.JSEscapeString(string(payload)) + `');`)
+}
+
+var edgeMap = map[string]uintptr{
+	"n-resize":  C.GDK_WINDOW_EDGE_NORTH,
+	"ne-resize": C.GDK_WINDOW_EDGE_NORTH_EAST,
+	"e-resize":  C.GDK_WINDOW_EDGE_EAST,
+	"se-resize": C.GDK_WINDOW_EDGE_SOUTH_EAST,
+	"s-resize":  C.GDK_WINDOW_EDGE_SOUTH,
+	"sw-resize": C.GDK_WINDOW_EDGE_SOUTH_WEST,
+	"w-resize":  C.GDK_WINDOW_EDGE_WEST,
+	"nw-resize": C.GDK_WINDOW_EDGE_NORTH_WEST,
 }
 
 func (f *Frontend) processMessage(message string) {
+	if message == "DomReady" {
+		if f.frontendOptions.OnDomReady != nil {
+			f.frontendOptions.OnDomReady(f.ctx)
+		}
+		return
+	}
+
 	if message == "drag" {
-		// if !f.mainWindow.IsFullScreen() {
-		f.startDrag()
-		// }
+		if !f.mainWindow.IsFullScreen() {
+			f.startDrag()
+		}
+		return
+	}
+
+	if message == "wails:showInspector" {
+		f.mainWindow.ShowInspector()
+		return
+	}
+
+	if strings.HasPrefix(message, "resize:") {
+		if !f.mainWindow.IsFullScreen() {
+			sl := strings.Split(message, ":")
+			if len(sl) != 2 {
+				f.logger.Info("Unknown message returned from dispatcher: %+v", message)
+				return
+			}
+			edge := edgeMap[sl[1]]
+			err := f.startResize(edge)
+			if err != nil {
+				f.logger.Error(err.Error())
+			}
+		}
+		return
+	}
+
+	if message == "runtime:ready" {
+		cmd := fmt.Sprintf(
+			"window.wails.setCSSDragProperties('%s', '%s');\n"+
+				"window.wails.setCSSDropProperties('%s', '%s');\n"+
+				"window.wails.flags.deferDragToMouseMove = true;",
+			f.frontendOptions.CSSDragProperty,
+			f.frontendOptions.CSSDragValue,
+			f.frontendOptions.DragAndDrop.CSSDropProperty,
+			f.frontendOptions.DragAndDrop.CSSDropValue,
+		)
+
+		f.ExecJS(cmd)
+
+		if f.frontendOptions.Frameless && f.frontendOptions.DisableResize == false {
+			f.ExecJS("window.wails.flags.enableResize = true;")
+		}
+
+		if f.frontendOptions.DragAndDrop.EnableFileDrop {
+			f.ExecJS("window.wails.flags.enableWailsDragAndDrop = true;")
+		}
+
 		return
 	}
 
@@ -262,29 +487,24 @@ func (f *Frontend) processMessage(message string) {
 }
 
 func (f *Frontend) Callback(message string) {
-	f.ExecJS(`window.wails.Callback(` + strconv.Quote(message) + `);`)
+	escaped, err := json.Marshal(message)
+	if err != nil {
+		panic(err)
+	}
+	f.ExecJS(`window.wails.Callback(` + string(escaped) + `);`)
 }
 
 func (f *Frontend) startDrag() {
-	f.dispatch(func() {
-		f.mainWindow.StartDrag()
-	})
+	f.mainWindow.StartDrag()
+}
+
+func (f *Frontend) startResize(edge uintptr) error {
+	f.mainWindow.StartResize(edge)
+	return nil
 }
 
 func (f *Frontend) ExecJS(js string) {
-	f.dispatch(func() {
-		f.mainWindow.ExecJS(js)
-	})
-}
-
-func (f *Frontend) dispatch(fn func()) {
-	dispatchCallbackLock.Lock()
-	id := 0
-	for fn := dispatchCallbacks[id]; fn != nil; id++ {
-	}
-	dispatchCallbacks[id] = fn
-	dispatchCallbackLock.Unlock()
-	C.gtkDispatch(C.int(id))
+	f.mainWindow.ExecJS(js)
 }
 
 var messageBuffer = make(chan string, 100)
@@ -295,64 +515,24 @@ func processMessage(message *C.char) {
 	messageBuffer <- goMessage
 }
 
-// Map of functions passed to dispatch()
-var dispatchCallbacks = make(map[int]func())
-var dispatchCallbackLock sync.Mutex
-
-//export callDispatchedMethod
-func callDispatchedMethod(cid C.int) {
-	id := int(cid)
-	fn := dispatchCallbacks[id]
-	if fn != nil {
-		go fn()
-		dispatchCallbackLock.Lock()
-		delete(dispatchCallbacks, id)
-		dispatchCallbackLock.Unlock()
-	} else {
-		println("Error: No dispatch method with id", id, cid)
-	}
-}
-
-var requestBuffer = make(chan unsafe.Pointer, 100)
+var requestBuffer = make(chan webview.Request, 100)
 
 func (f *Frontend) startRequestProcessor() {
 	for request := range requestBuffer {
-		f.processRequest(request)
+		f.assets.ServeWebViewRequest(request)
 	}
 }
 
 //export processURLRequest
 func processURLRequest(request unsafe.Pointer) {
-	requestBuffer <- request
+	requestBuffer <- webview.NewRequest(request)
 }
 
-func (f *Frontend) processRequest(request unsafe.Pointer) {
-	req := (*C.WebKitURISchemeRequest)(request)
-	uri := C.webkit_uri_scheme_request_get_uri(req)
-	goURI := C.GoString(uri)
-
-	file, match, err := common.TranslateUriToFile(goURI, "wails", "")
-	if err != nil {
-		// TODO Handle errors
-		return
-	} else if !match {
-		// This should never happen on linux, because we get only called for wails://
-		panic("Unexpected host for request on wails:// scheme")
+func (f *Frontend) startSecondInstanceProcessor() {
+	for secondInstanceData := range secondInstanceBuffer {
+		if f.frontendOptions.SingleInstanceLock != nil &&
+			f.frontendOptions.SingleInstanceLock.OnSecondInstanceLaunch != nil {
+			f.frontendOptions.SingleInstanceLock.OnSecondInstanceLaunch(secondInstanceData)
+		}
 	}
-
-	// Load file from asset store
-	content, mimeType, err := f.assets.Load(file)
-	if err != nil {
-		return
-	}
-
-	// TODO How to return 404/500 errors to webkit?
-
-	cContent := C.CString(string(content))
-	defer C.free(unsafe.Pointer(cContent))
-	cMimeType := C.CString(mimeType)
-	defer C.free(unsafe.Pointer(cMimeType))
-	cLen := C.long(len(content))
-	stream := C.g_memory_input_stream_new_from_data(unsafe.Pointer(cContent), cLen, nil)
-	C.webkit_uri_scheme_request_finish(req, stream, cLen, cMimeType)
 }
